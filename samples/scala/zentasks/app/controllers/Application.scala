@@ -21,6 +21,26 @@ object Application extends Controller {
     })
   )
 
+    // - Registration Form
+
+  val registerForm = Form(
+    tuple(
+      "email" -> nonEmptyText,
+      "verifyEmail" -> nonEmptyText,
+      "password" -> nonEmptyText,
+      "verifyPassword" -> nonEmptyText
+    ) verifying (result => result match {
+      case (email, verifyEmail, password, verifyPassword) => {
+        //email and verifyEmail are different
+        "email and email verification are not the same"; email == verifyEmail
+        //password and verifyPassword are different
+        "password and password verification are not the same"; password == verifyPassword
+        //email exists already
+        "email address already exists"; User.findByEmail(email).isDefined
+      }
+    })
+  )
+
   /**
    * Login page.
    */
