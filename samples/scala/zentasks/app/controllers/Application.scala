@@ -57,6 +57,26 @@ object Application extends Controller {
       user => Redirect(routes.Projects.index).withSession("email" -> user._1)
     )
   }
+  
+    /**
+   * Register page.
+   */
+  def register = Action { implicit request =>
+    Ok(html.register(registerForm))
+  }
+  
+    /**
+   * Handle register form submission
+   */
+  def createUser = Action { implicit request =>
+    registerForm.bindFromRequest.fold(
+      formWithErrors => BadRequest(html.register(formWithErrors)),
+      user => {
+        User.create(User())
+        Redirect(routes.Projects.index).withSession("email" -> user._1) 
+      }
+    )
+  }
 
   /**
    * Logout and clean the session.
