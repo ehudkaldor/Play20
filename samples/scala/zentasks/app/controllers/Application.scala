@@ -72,7 +72,10 @@ object Application extends Controller {
     registerForm.bindFromRequest.fold(
       formWithErrors => BadRequest(html.users.register(formWithErrors)),
       user => {
-        User.create(User())
+//        val email = user._1
+//        val password = user._3
+//        User.create(User(email, password))
+        User.create(User(user._1, user._3))
         Redirect(routes.Projects.index).withSession("email" -> user._1) 
       }
     )
