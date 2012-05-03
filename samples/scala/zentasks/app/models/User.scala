@@ -6,7 +6,7 @@ import play.api.Play.current
 import anorm._
 import anorm.SqlParser._
 
-case class User(email: String, name: String, password: String)
+case class User(email: String, password: String, firstName: String = "", lastName: String = "", isActivated: Boolean = false)
 
 object User {
   
@@ -17,9 +17,11 @@ object User {
    */
   val simple = {
     get[String]("user.email") ~
-    get[String]("user.name") ~
-    get[String]("user.password") map {
-      case email~name~password => User(email, name, password)
+    get[String]("user.password") ~
+    get[String]("user.firstName") ~
+    get[String]("user.lastName") ~
+    get[Boolean]("user.isActivated") map {
+      case email~password~firstName~lastName~isActivated => User(email, password, firstName, lastName, isActivated)
     }
   }
   
@@ -61,6 +63,19 @@ object User {
       ).as(User.simple.singleOpt)
     }
   }
+  
+  def exists(email: String): Boolean = {
+    DB.withConnection { implicit connection =>
+      SQL(
+        """
+         select * from user where 
+         email = {email}
+        """
+      ).on(
+        'email -> email
+      ).as(User.simple.singleOpt).isDefined
+    }    
+  }
    
   /**
    * Create a User.
@@ -70,13 +85,16 @@ object User {
       SQL(
         """
           insert into user values (
-            {email}, {name}, {password}
+            {email}, {password}, {firstName}, {lastName}, {isActivated}
           )
         """
       ).on(
         'email -> user.email,
-        'name -> user.name,
-        'password -> user.password
+        'password -> user.password,
+        'firstName -> user.firstName,
+        'lastName -> user.lastName,
+        'isActivated -> user.isActivated
+
       ).executeUpdate()
       
       user
