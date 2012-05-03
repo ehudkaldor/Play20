@@ -45,7 +45,7 @@ object Application extends Controller {
    * Login page.
    */
   def login = Action { implicit request =>
-    Ok(html.login(loginForm))
+    Ok(html.users.login(loginForm))
   }
 
   /**
@@ -53,7 +53,7 @@ object Application extends Controller {
    */
   def authenticate = Action { implicit request =>
     loginForm.bindFromRequest.fold(
-      formWithErrors => BadRequest(html.login(formWithErrors)),
+      formWithErrors => BadRequest(html.users.login(formWithErrors)),
       user => Redirect(routes.Projects.index).withSession("email" -> user._1)
     )
   }
@@ -62,7 +62,7 @@ object Application extends Controller {
    * Register page.
    */
   def register = Action { implicit request =>
-    Ok(html.register(registerForm))
+    Ok(html.users.register(registerForm))
   }
   
     /**
@@ -70,7 +70,7 @@ object Application extends Controller {
    */
   def createUser = Action { implicit request =>
     registerForm.bindFromRequest.fold(
-      formWithErrors => BadRequest(html.register(formWithErrors)),
+      formWithErrors => BadRequest(html.users.register(formWithErrors)),
       user => {
         User.create(User())
         Redirect(routes.Projects.index).withSession("email" -> user._1) 
