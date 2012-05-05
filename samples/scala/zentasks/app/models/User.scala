@@ -2,13 +2,32 @@ package models
 
 import play.api.db._
 import play.api.Play.current
-
 import anorm._
 import anorm.SqlParser._
+import be.nextlab.play.neo4j.rest.{Relation, CypherResult, Neo4JEndPoint, Node}
+import play.api.libs.json.{Format, JsValue,JsObject, JsString, JsBoolean}
 
 case class User(email: String, password: String, firstName: String = "", lastName: String = "", isActivated: Boolean = false)
 
 object User {
+  
+  implicit object UserJsonFormat extends Format[User]{
+    def reads(json: JsValue) = User(
+      (json \ "email").as[String],
+      (json \ "password").as[String],
+      (json \ "firstName").as[String],
+      (json \ "lastName").as[String],
+      (json \ "isActivated").as[Boolean]
+      )
+      
+    def writes(user: User) = JsObject(Seq(
+      "email" -> JsString(user.email),
+      "password" -> JsString(user.password),
+      "firstName" -> JsString(user.firstName),
+      "lastName" -> JsString(user.lastName),
+      "isActivated" -> JsBoolean(user.isActivated)
+    ))
+  }
   
   // -- Parsers
   
