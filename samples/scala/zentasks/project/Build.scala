@@ -9,10 +9,10 @@ object ApplicationBuild extends Build {
   val appVersion      = "0.1"
 
   /* Cloudbees plublic snapshot REPO */
-  val cloudbeesRepo = "Cloudbees public snapshot" at "https://repository-andy-petrella.forge.cloudbees.com/snapshot"
+  //val cloudbeesRepo = "Cloudbees public snapshot" at "https://repository-andy-petrella.forge.cloudbees.com/snapshot"
 
   /* LOCAL MAVEN REPO */
-  val localMavenRepo = "Local Maven Repository" at file(Path.userHome.absolutePath+"/.m2/repository").toURI.toURL.toString
+  val localMavenRepo = "Local Maven Repository" at file(Path.userHome.absolutePath+"/.ivy2/cache").toURI.toURL.toString
 
   val appDependencies = Seq(
     "be.nextlab" %% "neo4j-rest-play-plugin" % "0.0.1-SNAPSHOT",
