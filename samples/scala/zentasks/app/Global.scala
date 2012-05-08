@@ -22,7 +22,7 @@ object InitialData {
   def insert() = {
     
     if(User.findAll.isEmpty) {
-      
+      User.create(User("admin@white-bears.org", "secret", isActivated=true))
       Seq(
         User("admin@white-bears.org", "secret")
       ).foreach(User.create)
