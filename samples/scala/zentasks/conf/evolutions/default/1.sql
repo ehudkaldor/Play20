@@ -7,7 +7,7 @@ create table user (
   password                  varchar(255) not null,
   firstName                 varchar(255),
   lastName                  varchar(255),
-  isAuthenticated	    boolean
+  isActivated    	    boolean
 );
 
 create table project (
