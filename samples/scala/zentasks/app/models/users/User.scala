@@ -4,7 +4,7 @@ import play.api.db._
 import play.api.Play.current
 import anorm._
 import anorm.SqlParser._
-import be.nextlab.play.neo4j.rest.{Relation, CypherResult, Neo4JEndPoint, Node}
+//import be.nextlab.play.neo4j.rest.{Relation, CypherResult, Neo4JEndPoint, Node}
 import play.api.libs.json.{Format, JsValue,JsObject, JsString, JsBoolean}
 
 case class User(email: String, password: String, firstName: String = "", lastName: String = "", isActivated: Boolean = false)
