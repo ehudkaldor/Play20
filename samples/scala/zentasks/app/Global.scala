@@ -23,9 +23,9 @@ object InitialData {
     
     if(User.findAll.isEmpty) {
       User.create(User("admin@white-bears.org", "secret", isActivated=true))
-      Seq(
-        User("admin@white-bears.org", "secret")
-      ).foreach(User.create)
+//      Seq(
+//        User("admin@white-bears.org", "secret")
+//      ).foreach(User.create)
       
 //      Seq(
 //        Project(Id(1), "Play framework", "Play 2.0") -> Seq("guillaume@sample.com", "maxime@sample.com", "sadek@sample.com", "erwan@sample.com"),
