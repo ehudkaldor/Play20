@@ -41,5 +41,31 @@ object Role {
       SQL("select * from role").as(Role.simple *)
     }
   }
-
+  
+    /**
+   * Create a Role.
+   */
+  def create(role: Role): Role = {
+     DB.withTransaction { implicit connection =>
+       
+       // Get the role id
+       val id: Long = role.id.getOrElse {
+         SQL("select next value for role_seq").as(scalar[Long].single)
+       }
+       
+       // Insert the role
+       SQL(
+         """
+           insert into role values (
+             {id}, {name}
+           )
+         """
+       ).on(
+         'id -> id,
+         'name -> role.name
+       ).executeUpdate()
+       
+       role.copy(id = Id(id))
+     }
+  }
 }
