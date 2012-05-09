@@ -2,6 +2,11 @@
 
 # --- !Ups
 
+
+create table role (
+  name                      varchar(255) not null primary key
+);
+
 create table user (
   email                     varchar(255) not null primary key,
   password                  varchar(255) not null,
@@ -41,6 +46,7 @@ create sequence task_seq start with 1000;
 
 # --- !Downs
 
+drop table if exists role;
 drop table if exists task;
 drop sequence if exists task_seq;
 drop table if exists project_member;
