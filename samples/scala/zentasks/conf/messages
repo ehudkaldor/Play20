@@ -1,0 +1,6 @@
+# Messages
+
+# initial config user (disabled after setup is complete)
+config.initial.username=admin@zentasks
+config.initial.password=secret
+config.initial.role=0
