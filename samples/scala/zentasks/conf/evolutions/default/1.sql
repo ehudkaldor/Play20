@@ -30,6 +30,13 @@ create table project_member (
   foreign key(user_email)   references user(email) on delete cascade
 );
 
+create table project_owner (
+  project_id                bigint not null primary key,
+  owner_email               varchar(255) not null,
+  foreign key(project_id)   references project(id) on delete cascade,
+  foreign key(user_email)   references user(email) on delete cascade
+);
+
 create table task (
   id                        bigint not null primary key,
   title                     varchar(255) not null,
