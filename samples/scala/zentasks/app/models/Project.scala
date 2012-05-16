@@ -39,7 +39,7 @@ object Project {
   /**
    * Retrieve project for user
    */
-  def findInvolving(user: String): Seq[Project] = {
+  def findInvolving(user: User): Seq[Project] = {
     DB.withConnection { implicit connection =>
       SQL(
         """
@@ -48,7 +48,7 @@ object Project {
           where project_member.user_email = {email}
         """
       ).on(
-        'email -> user
+        'email -> user.email
       ).as(Project.simple *)
     }
   }
@@ -56,10 +56,11 @@ object Project {
   /**
    * Update a project.
    */
-  def rename(id: Long, newName: String) {
+  def rename(project: Project, newName: String) {
     DB.withConnection { implicit connection =>
       SQL("update project set name = {name} where id = {id}").on(
-        'id -> id, 'name -> newName
+        'id -> project.id, 
+        'name -> newName
       ).executeUpdate()
     }
   }
@@ -67,10 +68,10 @@ object Project {
   /**
    * Delete a project.
    */
-  def delete(id: Long) {
+  def delete(project: Project) {
     DB.withConnection { implicit connection => 
       SQL("delete from project where id = {id}").on(
-        'id -> id
+        'id -> project.id
       ).executeUpdate()
     }
   }
@@ -100,7 +101,7 @@ object Project {
   /**
    * Retrieve project member
    */
-  def membersOf(project: Long): Seq[User] = {
+  def membersOf(project: Project): Seq[User] = {
     DB.withConnection { implicit connection =>
       SQL(
         """
@@ -109,7 +110,7 @@ object Project {
           where project_member.project_id = {project}
         """
       ).on(
-        'project -> project
+        'project -> project.id
       ).as(User.simple *)
     }
   }
@@ -117,11 +118,11 @@ object Project {
   /**
    * Add a member to the project team.
    */
-  def addMember(project: Long, user: String) {
+  def addMember(project: Project, user: User) {
     DB.withConnection { implicit connection =>
       SQL("insert into project_member values({project}, {user})").on(
-        'project -> project,
-        'user -> user
+        'project -> project.id,
+        'user -> user.email
       ).executeUpdate()
     }
   }
@@ -129,11 +130,11 @@ object Project {
   /**
    * Remove a member from the project team.
    */
-  def removeMember(project: Long, user: String) {
+  def removeMember(project: Project, user: User) {
     DB.withConnection { implicit connection =>
       SQL("delete from project_member where project_id = {project} and user_email = {user}").on(
-        'project -> project,
-        'user -> user
+        'project -> project.id,
+        'user -> user.email
       ).executeUpdate()
     }
   }
@@ -141,7 +142,7 @@ object Project {
   /**
    * Check if a user is a member of this project
    */
-  def isMember(project: Long, user: String): Boolean = {
+  def isMember(project: Project, user: User): Boolean = {
     DB.withConnection { implicit connection =>
       SQL(
         """
@@ -150,8 +151,8 @@ object Project {
           where project_member.project_id = {project} and user.email = {email}
         """
       ).on(
-        'project -> project,
-        'email -> user
+        'project -> project.id,
+        'email -> user.email
       ).as(scalar[Boolean].single)
     }
   }
@@ -159,7 +160,7 @@ object Project {
   /**
    * Create a Project.
    */
-  def create(project: Project, members: Seq[String]): Project = {
+  def create(project: Project, owner: User, members: Seq[User]): Project = {
      DB.withTransaction { implicit connection =>
        
        // Get the project id
@@ -180,14 +181,15 @@ object Project {
          'folder -> project.folder
        ).executeUpdate()
        
+       // Insert project owner
+       SQL("insert into project_owner values ({id}, {email})").on('id -> id, 'email -> owner.email).executeUpdate()
+       
        // Add members
-       members.foreach { email =>
-         SQL("insert into project_member values ({id}, {email})").on('id -> id, 'email -> email).executeUpdate()
+       members.foreach { user =>
+         SQL("insert into project_member values ({id}, {email})").on('id -> id, 'email -> user.email).executeUpdate()
        }
        
-       project.copy(id = Id(id))
-       
+       project.copy(id = Id(id))       
      }
-  }
-  
+  }  
 }
