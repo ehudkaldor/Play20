@@ -7,7 +7,7 @@ import anorm.SqlParser._
 //import be.nextlab.play.neo4j.rest.{Relation, CypherResult, Neo4JEndPoint, Node}
 import play.api.libs.json.{Format, JsValue,JsObject, JsString, JsBoolean}
 
-case class User(email: String, password: String, firstName: String = "", lastName: String = "", isActivated: Boolean = false)
+case class User(email: String, password: String, firstName: String = "", lastName: String = "", isActivated: Boolean = false, roleName: String)
 
 object User {
   
@@ -17,7 +17,8 @@ object User {
       (json \ "password").as[String],
       (json \ "firstName").as[String],
       (json \ "lastName").as[String],
-      (json \ "isActivated").as[Boolean]
+      (json \ "isActivated").as[Boolean],
+      (json \ "roleName").as[String]
       )
       
     def writes(user: User) = JsObject(Seq(
@@ -25,7 +26,8 @@ object User {
       "password" -> JsString(user.password),
       "firstName" -> JsString(user.firstName),
       "lastName" -> JsString(user.lastName),
-      "isActivated" -> JsBoolean(user.isActivated)
+      "isActivated" -> JsBoolean(user.isActivated),
+      "roleName" -> JsString(user.roleName)
     ))
   }
   
@@ -39,8 +41,9 @@ object User {
     get[String]("user.password") ~
     get[String]("user.firstName") ~
     get[String]("user.lastName") ~
-    get[Boolean]("user.isActivated") map {
-      case email~password~firstName~lastName~isActivated => User(email, password, firstName, lastName, isActivated)
+    get[Boolean]("user.isActivated") ~
+    get[String]("user.roleName") map {
+      case email~password~firstName~lastName~isActivated~roleName => User(email, password, firstName, lastName, isActivated, roleName)
     }
   }
   
