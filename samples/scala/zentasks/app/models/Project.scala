@@ -6,7 +6,7 @@ import play.api.Play.current
 import anorm._
 import anorm.SqlParser._
 
-case class Project(id: Pk[Long], folder: String, name: String)
+case class Project(id: Pk[Long], folder: String, name: String, ownerEmail: String)
 
 object Project {
   
@@ -18,8 +18,9 @@ object Project {
   val simple = {
     get[Pk[Long]]("project.id") ~
     get[String]("project.folder") ~
-    get[String]("project.name") map {
-      case id~folder~name => Project(id, folder, name)
+    get[String]("project.name") ~
+    get[String]("project.ownerEmail") map {
+      case id~folder~name~ownerEmail => Project(id, folder, name, ownerEmail)
     }
   }
   
@@ -172,17 +173,15 @@ object Project {
        SQL(
          """
            insert into project values (
-             {id}, {name}, {folder}
+             {id}, {name}, {folder}, {ownerEmail}
            )
          """
        ).on(
          'id -> id,
          'name -> project.name,
-         'folder -> project.folder
+         'folder -> project.folder,
+         'ownerEmail -> project.ownerEmail
        ).executeUpdate()
-       
-       // Insert project owner
-       SQL("insert into project_owner values ({id}, {email})").on('id -> id, 'email -> owner.email).executeUpdate()
        
        // Add members
        members.foreach { user =>
