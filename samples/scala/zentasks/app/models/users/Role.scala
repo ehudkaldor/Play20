@@ -66,14 +66,13 @@ object Role {
 	      ).executeUpdate()
 	       
 	      Logger.debug("role name: " + role.name + " inserted to db")
-	       
-          role
         }
-        case r => {
+        case _ => {
           Logger.debug("role name: " + role.name + " found in db")
-          role
         }
-      }       
+      }
+      
+      role
     }
   }
 }
