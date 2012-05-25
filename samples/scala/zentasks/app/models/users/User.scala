@@ -99,26 +99,26 @@ object User {
   /**
    * Create a User.
    */
-  def create(user: User): User = {
+  def create(user: User): Option[User] = {
     DB.withConnection { implicit connection =>
-      SQL(
-        """
-          insert into user values (
-            {email}, {password}, {firstName}, {lastName}, {isActivated}
-          )
-        """
-      ).on(
-        'email -> user.email,
-        'password -> user.password,
-        'firstName -> user.firstName,
-        'lastName -> user.lastName,
-        'isActivated -> user.isActivated
-
-      ).executeUpdate()
-      
-      user
-      
+      findByEmail(user.email) match {
+        case None => {
+	      SQL(
+	        """
+	          insert into user values (
+	            {email}, {password}, {firstName}, {lastName}, {isActivated}
+	          )
+	        """
+	      ).on(
+	        'email -> user.email,
+	        'password -> user.password,
+	        'firstName -> user.firstName,
+	        'lastName -> user.lastName,
+	        'isActivated -> user.isActivated	
+	      ).executeUpdate()
+        }
+      }
+      Some(user)               
     }
   }
-  
 }
