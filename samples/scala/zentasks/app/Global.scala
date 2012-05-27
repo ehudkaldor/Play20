@@ -1,7 +1,8 @@
 import play.api._
-
 import models._
 import anorm._
+import models.users.Role
+import models.users.User
 
 object Global extends GlobalSettings {
   
@@ -25,7 +26,7 @@ object InitialData {
     Role.create(Role("monitor"))
     
     if(User.findAll.isEmpty) {
-      User.create(User("admin@white-bears.org", "secret", isActivated=true))     
+      User.create(User("admin@white-bears.org", "secret", "admin", "admin", isActivated=true, "superuser"))     
     }
     
   }
