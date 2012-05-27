@@ -2,9 +2,9 @@ package models
 
 import play.api.db._
 import play.api.Play.current
-
 import anorm._
 import anorm.SqlParser._
+import models.users.User
 
 case class Project(id: Pk[Long], folder: String, name: String, ownerEmail: String)
 
@@ -40,7 +40,7 @@ object Project {
   /**
    * Retrieve project for user
    */
-  def findInvolving(user: User): Seq[Project] = {
+  def findInvolving(userEmail: String): Seq[Project] = {
     DB.withConnection { implicit connection =>
       SQL(
         """
@@ -49,7 +49,7 @@ object Project {
           where project_member.user_email = {email}
         """
       ).on(
-        'email -> user.email
+        'email -> userEmail
       ).as(Project.simple *)
     }
   }
@@ -94,7 +94,8 @@ object Project {
   def renameFolder(folder: String, newName: String) {
     DB.withConnection { implicit connection =>
       SQL("update project set folder = {newName} where folder = {name}").on(
-        'name -> folder, 'newName -> newName
+        'name -> folder, 
+        'newName -> newName
       ).executeUpdate()
     }
   }
@@ -102,16 +103,16 @@ object Project {
   /**
    * Retrieve project member
    */
-  def membersOf(project: Project): Seq[User] = {
+  def membersOf(projectId: Long): Seq[User] = {
     DB.withConnection { implicit connection =>
       SQL(
         """
           select user.* from user 
           join project_member on project_member.user_email = user.email 
-          where project_member.project_id = {project}
+          where project_member.project_id = {projectId}
         """
       ).on(
-        'project -> project.id
+        'projectId -> projectId
       ).as(User.simple *)
     }
   }
@@ -119,11 +120,11 @@ object Project {
   /**
    * Add a member to the project team.
    */
-  def addMember(project: Project, user: User) {
+  def addMember(projectId: Long, email: String) {
     DB.withConnection { implicit connection =>
-      SQL("insert into project_member values({project}, {user})").on(
-        'project -> project.id,
-        'user -> user.email
+      SQL("insert into project_member values({projectId}, {email})").on(
+        'projectId -> projectId,
+        'email -> email
       ).executeUpdate()
     }
   }
@@ -131,11 +132,11 @@ object Project {
   /**
    * Remove a member from the project team.
    */
-  def removeMember(project: Project, user: User) {
+  def removeMember(projectId: Long, email: String) {
     DB.withConnection { implicit connection =>
-      SQL("delete from project_member where project_id = {project} and user_email = {user}").on(
-        'project -> project.id,
-        'user -> user.email
+      SQL("delete from project_member where project_id = {projectId} and user_email = {user}").on(
+        'projectId -> projectId,
+        'user -> email
       ).executeUpdate()
     }
   }
@@ -143,17 +144,17 @@ object Project {
   /**
    * Check if a user is a member of this project
    */
-  def isMember(project: Project, user: User): Boolean = {
+  def isMember(projectId: Long, email: String): Boolean = {
     DB.withConnection { implicit connection =>
       SQL(
         """
           select count(user.email) = 1 from user 
           join project_member on project_member.user_email = user.email 
-          where project_member.project_id = {project} and user.email = {email}
+          where project_member.project_id = {projectId} and user.email = {email}
         """
       ).on(
-        'project -> project.id,
-        'email -> user.email
+        'projectId -> projectId,
+        'email -> email
       ).as(scalar[Boolean].single)
     }
   }
@@ -161,7 +162,7 @@ object Project {
   /**
    * Create a Project.
    */
-  def create(project: Project, owner: User, members: Seq[User]): Project = {
+  def create(project: Project, members: Seq[User]): Project = {
      DB.withTransaction { implicit connection =>
        
        // Get the project id
