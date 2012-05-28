@@ -6,7 +6,7 @@ import anorm._
 import anorm.SqlParser._
 import models.users.User
 
-case class Project(id: Pk[Long], folder: String, name: String, ownerEmail: String)
+case class Project(id: Pk[Long], folder: String, name: String, ownerEmail: String, description: String = "")
 
 object Project {
   
@@ -19,8 +19,9 @@ object Project {
     get[Pk[Long]]("project.id") ~
     get[String]("project.folder") ~
     get[String]("project.name") ~
-    get[String]("project.ownerEmail") map {
-      case id~folder~name~ownerEmail => Project(id, folder, name, ownerEmail)
+    get[String]("project.ownerEmail") ~
+    get[String]("project.description")map {
+      case id~folder~name~ownerEmail~description => Project(id, folder, name, ownerEmail, description)
     }
   }
   
@@ -174,17 +175,19 @@ object Project {
        SQL(
          """
            insert into project values (
-             {id}, {name}, {folder}, {ownerEmail}
+             {id}, {name}, {folder}, {ownerEmail}, {description}
            )
          """
        ).on(
          'id -> id,
          'name -> project.name,
          'folder -> project.folder,
-         'ownerEmail -> project.ownerEmail
+         'ownerEmail -> project.ownerEmail,
+         'description -> project.description
        ).executeUpdate()
        
        // Add members
+       SQL("insert into project_member values ({id}, {email})").on('id -> id, 'email -> project.ownerEmail).executeUpdate()
        members.foreach { user =>
          SQL("insert into project_member values ({id}, {email})").on('id -> id, 'email -> user.email).executeUpdate()
        }
