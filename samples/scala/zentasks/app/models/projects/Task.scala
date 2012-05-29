@@ -1,4 +1,4 @@
-package models
+package models.projects
 
 import java.util.{Date}
 import play.api.db._
@@ -6,7 +6,7 @@ import play.api.Play.current
 import anorm._
 import anorm.SqlParser._
 
-case class Task(id: Pk[Long], folder: String, project: Long, title: String, done: Boolean, dueDate: Option[Date], assignedTo: Option[String])
+case class Task(id: Pk[Long], folder: String, project: Long, title: String, done: Boolean, description: Option[String], dueDate: Option[Date], assignedTo: Option[String])
 
 object Task {
   
@@ -21,10 +21,11 @@ object Task {
     get[Long]("task.project") ~
     get[String]("task.title") ~
     get[Boolean]("task.done") ~
+    get[Option[String]]("task.description") ~
     get[Option[Date]]("task.due_date") ~
     get[Option[String]]("task.assigned_to") map {
-      case id~folder~project~title~done~dueDate~assignedTo => Task(
-        id, folder, project, title, done, dueDate, assignedTo
+      case id~folder~project~title~done~description~dueDate~assignedTo => Task(
+        id, folder, project, title, done, description, dueDate, assignedTo
       )
     }
   }
