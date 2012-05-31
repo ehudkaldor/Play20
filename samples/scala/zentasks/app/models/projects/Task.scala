@@ -44,9 +44,9 @@ object Task {
   }
   
   /**
-   * Retrieve todo tasks for the user.
+   * Retrieve tasks for the user.
    */
-  def findTodoInvolving(user: String): Seq[(Task,Project)] = {
+  def findInvolving(user: String): Seq[(Task,Project)] = {
     DB.withConnection { implicit connection =>
       SQL(
         """
@@ -60,6 +60,24 @@ object Task {
       ).as(Task.simple ~ Project.simple map {
         case task~project => task -> project
       } *)
+    }
+  }
+  
+  /**
+   * Retrieves the tasks that were added as preceding to
+   * the parameter. Note that these are only the tasks directly
+   * preceding to this one, and not recursive 
+   * @param task
+   * @return
+   */
+  def getPreceding(task: Task): Seq[Task] = {
+    DB.withConnection { implicit connection =>
+      SQL(
+          """
+          """
+          ).on(
+            'taskId -> task.id  
+          ).as(Task.simple *)
     }
   }
   
