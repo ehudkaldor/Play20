@@ -1,14 +1,13 @@
 package controllers
 
-import play.api._
-import play.api.mvc._
-import play.api.data._
-import play.api.data.Forms._
-
 import anorm._
-
-import models._
+import play.api.data.Forms._
+import play.api.data._
+import play.api.mvc._
+import play.api._
 import views._
+import models.projects.{Project, Task}
+import models.users.User
 
 /**
  * Manage projects related operations.
@@ -18,12 +17,12 @@ object Projects extends Controller with Secured {
   /**
    * Display the dashboard.
    */
-  def index = IsAuthenticated { username => _ =>
-    User.findByEmail(username).map { user =>
+  def index = IsAuthenticated { email => _ =>
+    User.findByEmail(email).map { user =>
       Ok(
         html.dashboard(
-          Project.findInvolving(username), 
-          Task.findTodoInvolving(username), 
+          Project.findInvolving(email), 
+          Task.findTodoInvolving(email), 
           user
         )
       )
@@ -40,11 +39,13 @@ object Projects extends Controller with Secured {
       errors => BadRequest,
       folder => Ok(
         views.html.projects.item(
-          Project.create(
-            Project(NotAssigned, folder, "New project"), 
-            Seq(username)
-          )
-        )
+          User.findByEmail(username) map { user =>
+            Project.create(
+              Project(NotAssigned, folder, "New project", user.email), 
+              Seq(user)
+            )
+          }
+        )          
       )
     )
   }
@@ -52,7 +53,7 @@ object Projects extends Controller with Secured {
   /**
    * Delete a project.
    */
-  def delete(project: Long) = IsMemberOf(project) { username => _ =>
+  def delete(project: Project) = IsMemberOf(project.id) { username => _ =>
     Project.delete(project)
     Ok
   }
@@ -118,6 +119,5 @@ object Projects extends Controller with Secured {
       user => { Project.removeMember(project, user); Ok }
     )
   }
-
 }
 

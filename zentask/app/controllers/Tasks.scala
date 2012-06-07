@@ -9,7 +9,7 @@ import java.util.{Date}
 
 import anorm._
 
-import models._
+import models.projects._
 import views._
 
 /**
@@ -20,10 +20,10 @@ object Tasks extends Controller with Secured {
   /**
    * Display the tasks panel for this project.
    */
-  def index(project: Long) = IsMemberOf(project) { _ => implicit request =>
-    Project.findById(project).map { p =>
-      val tasks = Task.findByProject(project)
-      val team = Project.membersOf(project)
+  def index(projectId: Long) = IsMemberOf(projectId) { _ => implicit request =>
+    Project.findById(projectId).map { p =>
+      val tasks = Task.findByProject(projectId)
+      val team = Project.membersOf(projectId)
       Ok(html.tasks.index(p, tasks, team))
     }.getOrElse(NotFound)
   }
