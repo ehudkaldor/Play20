@@ -1,99 +1,127 @@
 package models.users
 
-import java.net.URI
-
-import org.neo4j.graphdb.Node
-import org.neo4j.scala.{Neo4jWrapper, RestGraphDatabaseServiceProvider, RestTypedTraverser, TypedTraverser}
-
+import play.api.db._
 import play.api.Play.current
+import anorm._
+import anorm.SqlParser._
+//import be.nextlab.play.neo4j.rest.{Relation, CypherResult, Neo4JEndPoint, Node}
+import play.api.libs.json.{Format, JsValue,JsObject, JsString, JsBoolean}
 
 case class User(email: String, password: String, firstName: String = "", lastName: String = "", isActivated: Boolean = false, roleName: String)
 
-object User extends AnyRef with Neo4jWrapper with RestGraphDatabaseServiceProvider with RestTypedTraverser with TypedTraverser{
+object User {
   
-  lazy val userList = {
-    withTx {
-      implicit neo => {
-        getReferenceNode.doTraverse[User](follow ->- "USER") {
-          END_OF_GRAPH
-        } {
-          case (x: User, _) => true 
-          case _ => false
-        }.toList.sortWith(_.email < _.email)
-      }
-    }
-  }
-  
-  override def uri: URI = {
-    new URI("localhost")
-  }
-  
-  override def userPw: Option[(String, String)] ={
-    Some("","")
+  implicit object UserJsonFormat extends Format[User]{
+    def reads(json: JsValue) = User(
+      (json \ "email").as[String],
+      (json \ "password").as[String],
+      (json \ "firstName").as[String],
+      (json \ "lastName").as[String],
+      (json \ "isActivated").as[Boolean],
+      (json \ "roleName").as[String]
+      )
+      
+    def writes(user: User) = JsObject(Seq(
+      "email" -> JsString(user.email),
+      "password" -> JsString(user.password),
+      "firstName" -> JsString(user.firstName),
+      "lastName" -> JsString(user.lastName),
+      "isActivated" -> JsBoolean(user.isActivated),
+      "roleName" -> JsString(user.roleName)
+    ))
   }
   
   // -- Parsers
   
+  /**
+   * Parse a User from a ResultSet
+   */
+  val simple = {
+    get[String]("user.email") ~
+    get[String]("user.password") ~
+    get[String]("user.firstName") ~
+    get[String]("user.lastName") ~
+    get[Boolean]("user.isActivated") ~
+    get[String]("user.roleName") map {
+      case email~password~firstName~lastName~isActivated~roleName => User(email, password, firstName, lastName, isActivated, roleName)
+    }
+  }
+  
   // -- Queries
   
   /**
-   * Retrieve a User by email.
+   * Retrieve a User from email.
    */
   def findByEmail(email: String): Option[User] = {
-    Some[User](findAll.filter(_.email == email)(0))
+    DB.withConnection { implicit connection =>
+      SQL("select * from user where email = {email}").on(
+        'email -> email
+      ).as(User.simple.singleOpt)
+    }
   }
   
   /**
    * Retrieve all users.
    */
   def findAll: Seq[User] = {
-    withTx {
-      implicit neo => {
-        getReferenceNode.doTraverse[User](follow ->- "USER") {
-          END_OF_GRAPH
-        } {
-          case (x: User, _) => true 
-          case _ => false
-        }.toList.sortWith(_.email < _.email)
-      }
+    DB.withConnection { implicit connection =>
+      SQL("select * from user").as(User.simple *)
     }
   }
   
   /**
    * Authenticate a User.
    */
-  def authenticate(email: String, password: String): Boolean = {
-    val user: User = findByEmail(email).getOrElse {
-      return false
+  def authenticate(email: String, password: String): Option[User] = {
+    DB.withConnection { implicit connection =>
+      SQL(
+        """
+         select * from user where 
+         email = {email} and password = {password}
+        """
+      ).on(
+        'email -> email,
+        'password -> password
+      ).as(User.simple.singleOpt)
     }
-    user.password == passwordHash(password)
   }
   
   def exists(email: String): Boolean = {
-    findByEmail(email).getOrElse {
-      return true
-    }
-    false
+    DB.withConnection { implicit connection =>
+      SQL(
+        """
+         select * from user where 
+         email = {email}
+        """
+      ).on(
+        'email -> email
+      ).as(User.simple.singleOpt).isDefined
+    }    
   }
    
   /**
    * Create a User.
    */
   def create(user: User): Option[User] = {
-    withTx {
-      implicit neo => {
-	    exists(user.email) match {
-	      case true => None
-	    }
-	    var node: Node = createNode(
-	        User(user.email, passwordHash(user.password), user.firstName, user.lastName, user.isActivated, user.roleName)
-	    )
-	    Neo4jWrapper.toCC[User](node)
+    DB.withConnection { implicit connection =>
+      findByEmail(user.email) match {
+        case None => {
+	      SQL(
+	        """
+	          insert into user values (
+	            {email}, {password}, {firstName}, {lastName}, {isActivated}
+	          )
+	        """
+	      ).on(
+	        'email -> user.email,
+	        'password -> user.password,
+	        'firstName -> user.firstName,
+	        'lastName -> user.lastName,
+	        'isActivated -> user.isActivated	
+	      ).executeUpdate()
+        }
       }
+      Some(user)               
     }
-  }
-  
-  def passwordHash(clearPass: String): String = {
-    clearPass
   }
 }
