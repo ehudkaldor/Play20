@@ -4,11 +4,12 @@ import java.util.{Date}
 import play.api.db._
 import play.api.Play.current
 import org.neo4j.scala.{RestTypedTraverser, RestGraphDatabaseServiceProvider, Neo4jWrapper}
+import models.users.User
 
 
 case class Task(id: Long, folder: String, project: Long, title: String, done: Boolean, description: Option[String] = None, dueDate: Option[Date] = None, assignedTo: Option[String] = None)
 
-object Task extends AnyRef with Neo4jWrapper with RestGraphDatabaseServiceProvider with RestTypedTraverser{
+object Task extends Neo4jWrapper with MyRestGraphDatabaseServiceProvider with RestTypedTraverser{
   
 
   // -- Queries
@@ -24,9 +25,12 @@ object Task extends AnyRef with Neo4jWrapper with RestGraphDatabaseServiceProvid
   /**
    * Retrieve tasks for the user.
    */
-  def findInvolving(user: String): Seq[(Task,Project)] = withTx {
-    implicit neo =>
+  def findInvolving(email: String): Seq[(Task,Project)] = withTx {
+    implicit neo => {
+      getNodeById(100)
+      User.findByEmail(email)
       Seq()
+    }
   }
   
   /**
