@@ -1,15 +1,14 @@
 package models.users
 
 import java.net.URI
-
 import org.neo4j.graphdb.Node
 import org.neo4j.scala.{Neo4jWrapper, RestGraphDatabaseServiceProvider, RestTypedTraverser, TypedTraverser}
-
 import play.api.Play.current
+import models.utils.MyRestGraphDatabaseServiceProvider
 
 case class User(email: String, password: String, firstName: String = "", lastName: String = "", isActivated: Boolean = false, roleName: String)
 
-object User extends AnyRef with Neo4jWrapper with RestGraphDatabaseServiceProvider with RestTypedTraverser with TypedTraverser{
+object User extends Neo4jWrapper with MyRestGraphDatabaseServiceProvider with RestTypedTraverser with TypedTraverser{
   
   lazy val userList = {
     withTx {
@@ -23,15 +22,7 @@ object User extends AnyRef with Neo4jWrapper with RestGraphDatabaseServiceProvid
       }
     }
   }
-  
-  override def uri: URI = {
-    new URI("localhost")
-  }
-  
-  override def userPw: Option[(String, String)] ={
-    Some("","")
-  }
-  
+    
   // -- Parsers
   
   // -- Queries
