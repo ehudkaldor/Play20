@@ -5,6 +5,7 @@ import play.api.db._
 import play.api.Play.current
 import org.neo4j.scala.{RestTypedTraverser, RestGraphDatabaseServiceProvider, Neo4jWrapper}
 import models.users.User
+import models.utils.MyRestGraphDatabaseServiceProvider
 
 
 case class Task(id: Long, folder: String, project: Long, title: String, done: Boolean, description: Option[String] = None, dueDate: Option[Date] = None, assignedTo: Option[String] = None)
