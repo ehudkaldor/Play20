@@ -6,7 +6,7 @@ import org.neo4j.scala.{Neo4jWrapper, RestGraphDatabaseServiceProvider, RestType
 import play.api.Play.current
 import models.utils.MyRestGraphDatabaseServiceProvider
 
-case class User(email: String, password: String, firstName: String = "", lastName: String = "", isActivated: Boolean = false, roleName: String)
+case class User(email: String, password: String, firstName: String = "", lastName: String = "", roleName: String, isActivated: Boolean = false)
 
 object User extends Neo4jWrapper with MyRestGraphDatabaseServiceProvider with RestTypedTraverser with TypedTraverser{
   
@@ -77,7 +77,7 @@ object User extends Neo4jWrapper with MyRestGraphDatabaseServiceProvider with Re
 	      case true => None
 	    }
 	    var node: Node = createNode(
-	        User(user.email, passwordHash(user.password), user.firstName, user.lastName, user.isActivated, user.roleName)
+	        User(user.email, passwordHash(user.password), user.firstName, user.lastName, user.roleName, user.isActivated)
 	    )
 	    Neo4jWrapper.toCC[User](node)
       }
