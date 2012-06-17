@@ -2,13 +2,12 @@ package models.users
 
 import play.api.db._
 import play.api.Play.current
-import anorm._
-import anorm.SqlParser._
 import play.Logger
 import org.neo4j.scala.Neo4jWrapper
 import models.utils.MyRestGraphDatabaseServiceProvider
 import org.neo4j.scala.RestTypedTraverser
 import org.neo4j.scala.TypedTraverser
+import org.neo4j.graphdb.Node
 
 case class Role (name: String)
 
@@ -20,20 +19,40 @@ object Role extends Neo4jWrapper with MyRestGraphDatabaseServiceProvider with Re
    * Retrieve a Role from name.
    */
   def findByName(name: String): Option[Role] = {
-    None
+        Some[Role](findAll.filter(_.name == name)(0))
   }
   
   /**
    * Retrieve all roles.
    */
   def findAll: Seq[Role] = {
-    Seq()
+    withTx {
+      implicit neo => {
+        getReferenceNode.doTraverse[Role](follow ->- "ROLE") {
+          END_OF_GRAPH
+        } {
+          case (x: Role, _) => true 
+          case _ => false
+        }.toList.sortWith(_.name < _.name)
+      }
+    }
   }
   
     /**
    * Create a Role.
    */
   def create(role: Role): Option[Role] = {
-    None
+    withTx {
+      implicit neo => {
+	    findByName(role.name) match {
+	      case _ => None
+	    }
+	    var node: Node = createNode(
+	        Role(role.name)
+	    )
+	    Neo4jWrapper.toCC[Role](node)
+      }
+    }
+
   }
 }
