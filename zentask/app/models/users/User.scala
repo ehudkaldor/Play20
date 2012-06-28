@@ -1,29 +1,25 @@
 package models.users
 
-import java.net.URI
 import org.neo4j.graphdb.Node
-import org.neo4j.scala.{Neo4jWrapper, RestGraphDatabaseServiceProvider, RestTypedTraverser, TypedTraverser}
-import play.api.Play.current
+import org.neo4j.scala.Neo4jWrapper
+import org.neo4j.scala.RestTypedTraverser
+import org.neo4j.scala.TypedTraverser
 import models.utils.MyRestGraphDatabaseServiceProvider
+import models.utils.ModelsImplicits.user2node
+import org.neo4j.graphdb.index.Index
+import org.neo4j.graphdb.Relationship
 
-case class User(email: String, password: String, firstName: String = "", lastName: String = "", roleName: String, isActivated: Boolean = false)
+import play.api.Logger
+
+case class User(email: String, password: String, firstName: String = "", lastName: String = "", roleName: String, isActivated: Boolean = false) {    
+}
 
 object User extends Neo4jWrapper with MyRestGraphDatabaseServiceProvider with RestTypedTraverser with TypedTraverser{
-  
-  lazy val userList = {
-    withTx {
-      implicit neo => {
-        getReferenceNode.doTraverse[User](follow ->- "USER") {
-          END_OF_GRAPH
-        } {
-          case (x: User, _) => true 
-          case _ => false
-        }.toList.sortWith(_.email < _.email)
-      }
-    }
-  }
-    
-  // -- Parsers
+
+  lazy val nodeIndex: Index[Node] = getNodeIndex("user").getOrElse{addNodeIndex("user").get}
+  lazy val relationshipIndex: Index[Relationship] = getRelationIndex("user").getOrElse{addRelationshipIndex("user").get}
+
+  // -- Parsers	
   
   // -- Queries
   
@@ -54,10 +50,10 @@ object User extends Neo4jWrapper with MyRestGraphDatabaseServiceProvider with Re
    * Authenticate a User.
    */
   def authenticate(email: String, password: String): Boolean = {
-    val user: User = findByEmail(email).getOrElse {
-      return false
-    }
-    user.password == passwordHash(password)
+    findByEmail(email).map { user =>
+      user.password == passwordHash(password)    
+    } 
+    false
   }
   
   def exists(email: String): Boolean = {
@@ -74,11 +70,19 @@ object User extends Neo4jWrapper with MyRestGraphDatabaseServiceProvider with Re
     withTx {
       implicit neo => {
 	    exists(user.email) match {
-	      case true => None
-	    }
-	    var node: Node = createNode(
+	      case true => {
+            Logger.debug("user email " + user.email + " already exists")
+            None
+	      }
+	    }	
+	    val node: Node = createNode(
 	        User(user.email, passwordHash(user.password), user.firstName, user.lastName, user.roleName, user.isActivated)
 	    )
+        Logger.debug("new node for user email: " + user.email + " created")
+	    nodeIndex.add(node, "email", user.email)
+        Logger.debug("new user node added to email index")
+        nodeIndex.add(node, "nodeId", node.getId())
+        Logger.debug("new user node added to nodeId index")
 	    Neo4jWrapper.toCC[User](node)
       }
     }
