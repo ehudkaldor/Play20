@@ -1,198 +1,166 @@
 package models.projects
 
-import play.api.db._
-import play.api.Play.current
-import anorm._
-import anorm.SqlParser._
+import org.neo4j.graphdb.index.Index
+import org.neo4j.graphdb.Node
+import org.neo4j.graphdb.Relationship
+import org.neo4j.scala.Neo4jWrapper
+import org.neo4j.scala.RestGraphDatabaseServiceProvider
+import org.neo4j.scala.RestTypedTraverser
+import org.neo4j.scala.TypedTraverser
 import models.users.User
+import models.utils.MyRestGraphDatabaseServiceProvider 
+import models.utils.ModelsImplicits.{project2node, user2node}
+import play.api.Play.current
+import scala.collection.JavaConversions.iterableAsScalaIterable
+import play.api.Logger
 
-case class Project(id: Pk[Long], folder: String, name: String, ownerEmail: String, description: String = "")
+case class Project(name: String, ownerEmail: String, folder: String = "", description: String = "")
 
-object Project {
+object Project extends Neo4jWrapper with MyRestGraphDatabaseServiceProvider with RestTypedTraverser with TypedTraverser{
   
   // -- Parsers
-  
-  /**
-   * Parse a Project from a ResultSet
-   */
-  val simple = {
-    get[Pk[Long]]("project.id") ~
-    get[String]("project.folder") ~
-    get[String]("project.name") ~
-    get[String]("project.ownerEmail") ~
-    get[String]("project.description")map {
-      case id~folder~name~ownerEmail~description => Project(id, folder, name, ownerEmail, description)
-    }
-  }
+  lazy val nodeIndex: Index[Node] = getNodeIndex("project").getOrElse{addNodeIndex("project").get}
+  lazy val relationshipIndex: Index[Relationship] = getRelationIndex("project").getOrElse{addRelationshipIndex("project").get}
+
   
   // -- Queries
     
   /**
    * Retrieve a Project from id.
    */
-  def findById(id: Long): Option[Project] = {
-    DB.withConnection { implicit connection =>
-      SQL("select * from project where id = {id}").on(
-        'id -> id
-      ).as(Project.simple.singleOpt)
+  def findByNameAndFolder(projectName: String, folder: String): Option[Project] = withTx{
+    implicit neo => {
+      nodeIndex.get("name+folder", projectName + "+" + folder).getSingle().toCC[Project]
     }
   }
   
   /**
-   * Retrieve project for user
+   * Retrieve all projects owned by user
    */
-  def findInvolving(userEmail: String): Seq[Project] = {
-    DB.withConnection { implicit connection =>
-      SQL(
-        """
-          select * from project 
-          join project_member on project.id = project_member.project_id 
-          where project_member.user_email = {email}
-        """
-      ).on(
-        'email -> userEmail
-      ).as(Project.simple *)
-    }
+  def findInvolving(userEmail: String): Option[Seq[Project]] = withTx{
+    implicit neo => {
+      User.findByEmail(userEmail).map { user =>
+        val userIndex = getNodeIndex("user").getOrElse{addNodeIndex("user").get}
+        (for (node <- relationshipIndex.get("owner of", user); t = node.getStartNode().toCC[Project].get) yield t) toSeq
+      } orElse {
+        None
+      }
+    }    
   }
   
   /**
-   * Update a project.
+   * Rename a project.
    */
-  def rename(project: Project, newName: String) {
-    DB.withConnection { implicit connection =>
-      SQL("update project set name = {name} where id = {id}").on(
-        'id -> project.id, 
-        'name -> newName
-      ).executeUpdate()
+  def rename(project: Project, newName: String) = withTx {
+    implicit neo => {
+      val oldName = project.name
+      project.setProperty("name", newName)
+      Logger.debug("project id: " + project.getId() + " renamed from " + oldName + " to " + project.name)
     }
   }
   
   /**
    * Delete a project.
    */
-  def delete(project: Project) {
-    DB.withConnection { implicit connection => 
-      SQL("delete from project where id = {id}").on(
-        'id -> project.id
-      ).executeUpdate()
-    }
-  }
-  
-  /**
-   * Delete all project in a folder
-   */
-  def deleteInFolder(folder: String) {
-    DB.withConnection { implicit connection => 
-      SQL("delete from project where folder = {folder}").on(
-        'folder -> folder
-      ).executeUpdate()
-    }
-  }
-  
-  /**
-   * Rename a folder
-   */
-  def renameFolder(folder: String, newName: String) {
-    DB.withConnection { implicit connection =>
-      SQL("update project set folder = {newName} where folder = {name}").on(
-        'name -> folder, 
-        'newName -> newName
-      ).executeUpdate()
+  def delete(project: Project) = withTx {
+    implicit neo => {
+      val projectId = project.getId 
+      project.delete()
+      Logger.debug("deleted project id: " + projectId)
     }
   }
   
   /**
    * Retrieve project member
    */
-  def membersOf(projectId: Long): Seq[User] = {
-    DB.withConnection { implicit connection =>
-      SQL(
-        """
-          select user.* from user 
-          join project_member on project_member.user_email = user.email 
-          where project_member.project_id = {projectId}
-        """
-      ).on(
-        'projectId -> projectId
-      ).as(User.simple *)
+  def membersOf(project: Project): Seq[User] = withTx{
+    implicit neo => {
+      (for (node <- project.getRelationships("member", "-->"); t = node.getStartNode().toCC[User].get) yield t) toSeq
     }
   }
   
   /**
    * Add a member to the project team.
    */
-  def addMember(projectId: Long, email: String) {
-    DB.withConnection { implicit connection =>
-      SQL("insert into project_member values({projectId}, {email})").on(
-        'projectId -> projectId,
-        'email -> email
-      ).executeUpdate()
+  def addMember(project: Project, userEmail: String) = withTx {
+    implicit neo => {
+      User.findByEmail(userEmail).map { member =>
+        val nodeRel: Relationship = project.createRelationshipTo(member, "member")
+	    Logger.debug("new member relatioship created for project id: " + project.getId() + " and user " + member.email + ", relationship id: " + nodeRel.getId())
+	    relationshipIndex.add(nodeRel, "member", project) 
+	    Logger.debug("new member relatioship added to index")
+	    val memberRel: Relationship = member.createRelationshipTo(project, "member of")
+	    Logger.debug("new member-of relatioship created for project id: " + project.getId() + " and user " + member.email + ", relationship id: " + memberRel.getId())
+	    relationshipIndex.add(memberRel, "member of", project) 
+        Logger.debug("new member-of relatioship added to index")
+      }
     }
   }
   
   /**
    * Remove a member from the project team.
    */
-  def removeMember(projectId: Long, email: String) {
-    DB.withConnection { implicit connection =>
-      SQL("delete from project_member where project_id = {projectId} and user_email = {user}").on(
-        'projectId -> projectId,
-        'user -> email
-      ).executeUpdate()
+  def removeMember(project: Project, userEmail: String) = withTx {
+    implicit neo => {
+      
     }
   }
   
   /**
    * Check if a user is a member of this project
    */
-  def isMember(projectId: Long, email: String): Boolean = {
-    DB.withConnection { implicit connection =>
-      SQL(
-        """
-          select count(user.email) = 1 from user 
-          join project_member on project_member.user_email = user.email 
-          where project_member.project_id = {projectId} and user.email = {email}
-        """
-      ).on(
-        'projectId -> projectId,
-        'email -> email
-      ).as(scalar[Boolean].single)
+  def isMember(project: Project, userEmail: String): Boolean  = withTx {
+    implicit neo => {
+      User.findByEmail(userEmail).map { user =>
+        membersOf(project).contains(user)
+      }
+      false
     }
   }
    
   /**
    * Create a Project.
    */
-  def create(project: Project, members: Seq[User]): Project = {
-     DB.withTransaction { implicit connection =>
-       
-       // Get the project id
-       val id: Long = project.id.getOrElse {
-         SQL("select next value for project_seq").as(scalar[Long].single)
-       }
-       
-       // Insert the project
-       SQL(
-         """
-           insert into project values (
-             {id}, {name}, {folder}, {ownerEmail}, {description}
-           )
-         """
-       ).on(
-         'id -> id,
-         'name -> project.name,
-         'folder -> project.folder,
-         'ownerEmail -> project.ownerEmail,
-         'description -> project.description
-       ).executeUpdate()
-       
-       // Add members
-       SQL("insert into project_member values ({id}, {email})").on('id -> id, 'email -> project.ownerEmail).executeUpdate()
-       members.foreach { user =>
-         SQL("insert into project_member values ({id}, {email})").on('id -> id, 'email -> user.email).executeUpdate()
-       }
-       
-       project.copy(id = Id(id))       
-     }
-  }  
+  def create(project: Project, members: Seq[User]): Option[Project] = {
+    findByNameAndFolder(project.name, project.folder) match {
+      case _ => {
+        Logger.debug("project found in DB")
+        None 
+      }
+    }
+    withTx {
+      implicit neo => {
+	    val node = createNode(project)
+	    Logger.debug("database node create for task id " + node.getId)
+	    User.findByEmail(project.ownerEmail).map { user =>
+	      val userIndex = getNodeIndex("user").getOrElse{addNodeIndex("user").get}
+	      val nodeRel: Relationship = node.createRelationshipTo(user, "owned by")
+	      Logger.debug("new owned-by relatioship created for project id: " + node.getId() + " and user " + user.email + ", relationship id: " + nodeRel.getId())
+	      relationshipIndex.add(nodeRel, "owned by", node) 
+	      Logger.debug("new owned-by relatioship added to index")
+	      val userRel: Relationship = user.createRelationshipTo(node, "owner of")
+	      Logger.debug("new owner-of relatioship created for user " + user.email + " and roject id: " + project.getId() + " , relationship id: " + userRel.getId())
+	      relationshipIndex.add(userRel, "owner of", user)
+	      Logger.debug("new owner-of relatioship added to index")
+	    }
+		nodeIndex.add(node, "name+folder", project.name + "+" + project.folder)
+	    Logger.debug("new project node added to name+folder index")
+		nodeIndex.add(node, "nodeId", node.getId())
+	    Logger.debug("new project node added to nodeId index")
+	    
+	    for (member <- members) {
+	      val nodeRel: Relationship = node.createRelationshipTo(member, "member")
+	      Logger.debug("new member relatioship created for project id: " + node.getId() + " and user " + member.email + ", relationship id: " + nodeRel.getId())
+	      relationshipIndex.add(nodeRel, "member", node) 
+	      Logger.debug("new member relatioship added to index")
+	      val memberRel: Relationship = member.createRelationshipTo(node, "member of")
+	      Logger.debug("new member-of relatioship created for project id: " + node.getId() + " and user " + member.email + ", relationship id: " + memberRel.getId())
+	      relationshipIndex.add(memberRel, "member of", node) 
+	      Logger.debug("new member-of relatioship added to index")
+	    }
+	    
+	    Neo4jWrapper.toCC[Project] (node)
+      }      
+    } 
+  }
 }
