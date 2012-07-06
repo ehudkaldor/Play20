@@ -8,12 +8,15 @@ import models.utils.MyRestGraphDatabaseServiceProvider
 import org.neo4j.scala.RestTypedTraverser
 import org.neo4j.scala.TypedTraverser
 import org.neo4j.graphdb.Node
+import org.neo4j.graphdb.index.Index
 
 case class Role (name: String)
 
 object Role extends Neo4jWrapper with MyRestGraphDatabaseServiceProvider with RestTypedTraverser with TypedTraverser{
     // -- Queries
-  
+
+  lazy val index: Index[Node] = getNodeIndex("role").getOrElse{addNodeIndex("role").get}
+
   
   /**
    * Retrieve a Role from name.
@@ -50,6 +53,7 @@ object Role extends Neo4jWrapper with MyRestGraphDatabaseServiceProvider with Re
 	    var node: Node = createNode(
 	        Role(role.name)
 	    )
+	    index.add(node, "name", role.name)
 	    Neo4jWrapper.toCC[Role](node)
       }
     }
