@@ -7,6 +7,7 @@ import play.api.data.Forms._
 import models._
 import views._
 import models.users.User
+import models.projects._
 
 object Application extends Controller {
 
