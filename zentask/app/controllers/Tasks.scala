@@ -4,13 +4,11 @@ import play.api._
 import play.api.mvc._
 import play.api.data._
 import play.api.data.Forms._
-
 import java.util.{Date}
-
 import anorm._
-
 import models.projects._
 import views._
+import org.joda.time.DateTime
 
 /**
  * Manage tasks related operations.
@@ -20,17 +18,19 @@ object Tasks extends Controller with Secured {
   /**
    * Display the tasks panel for this project.
    */
-  def index(projectId: Long) = IsMemberOf(projectId) { _ => implicit request =>
-    Project.findById(projectId).map { p =>
-      val tasks = Task.findByProject(projectId)
-      val team = Project.membersOf(projectId)
+  def index(projectName: String) = IsProjectOwner(projectName) { _ => implicit request =>
+    Project.findByName(projectName).map { p =>
+      val tasks = Task.findByProject(p)
+      val team = Project.membersOf(p)
       Ok(html.tasks.index(p, tasks, team))
     }.getOrElse(NotFound)
   }
 
   val taskForm = Form(
     tuple(
-      "title" -> nonEmptyText,
+      "taskTitle" -> nonEmptyText,
+      "taskFolder" -> nonEmptyText,
+      "taskDescription" -> optional(text),
       "dueDate" -> optional(date("MM/dd/yy")),
       "assignedTo" -> optional(text)
     )
@@ -41,13 +41,13 @@ object Tasks extends Controller with Secured {
   /**
    * Create a task in this project.
    */  
-  def add(project: Long, folder: String) =  IsMemberOf(project) { _ => implicit request =>
+  def addTask(projectName: String) =  IsProjectOwner(projectName) { _ => implicit request =>
     taskForm.bindFromRequest.fold(
       errors => BadRequest,
       {
-        case (title, dueDate, assignedTo) => 
+        case (taskTitle, taskFolder, taskDescription, dueDate, assignedTo) => 
           val task =  Task.create(
-            Task(NotAssigned, folder, project, title, false, dueDate, assignedTo)
+            Task(taskTitle, taskFolder, projectName, false, dueDate=Some(new DateTime(dueDate)), ownerEmail = assignedTo)
           )
           Ok(html.tasks.item(task))
       }
@@ -57,12 +57,15 @@ object Tasks extends Controller with Secured {
   /**
    * Update a task
    */
-  def update(task: Long) = IsOwnerOf(task) { _ => implicit request =>
-    Form("done" -> boolean).bindFromRequest.fold(
+  def updateTask() = IsOwnerOf(task) { _ => implicit request =>
+    taskForm.bindFromRequest.fold(
       errors => BadRequest,
-      isDone => { 
-        Task.markAsDone(task, isDone)
-        Ok 
+      {
+        case (taskTitle, taskFolder, taskDescription, dueDate, assignedTo) => 
+          val task =  Task.create(
+            Task(taskTitle, taskFolder, projectName, false, dueDate=Some(new DateTime(dueDate)), ownerEmail = assignedTo)
+          )
+          Ok(html.tasks.item(task))
       }
     )
   }
@@ -70,8 +73,8 @@ object Tasks extends Controller with Secured {
   /**
    * Delete a task
    */
-  def delete(task: Long) = IsOwnerOf(task) { _ => implicit request =>
-    Task.delete(task)
+  def delete(taskId: Long) = IsTaskOwner(task) { _ => implicit request =>
+    Task.delete(taskId)
     Ok
   }
 
@@ -87,19 +90,19 @@ object Tasks extends Controller with Secured {
   /**
    * Delete a full tasks folder.
    */
-  def deleteFolder(project: Long, folder: String) = IsMemberOf(project) { _ => implicit request =>
-    Task.deleteInFolder(project, folder)
+  def deleteFolder(projectName: String, folder: String) = IsProjectOwner(projectName) { _ => implicit request =>
+    Task.deleteInFolder(projectName, folder)
     Ok
   }
 
   /**
    * Rename a tasks folder.
    */
-  def renameFolder(project: Long, folder: String) = IsMemberOf(project) { _ => implicit request =>
+  def renameFolder(projectName: String, folder: String) = IsProjectOwner(projectName) { _ => implicit request =>
     Form("name" -> nonEmptyText).bindFromRequest.fold(
       errors => BadRequest,
       newName => { 
-        Task.renameFolder(project, folder, newName) 
+        Task.renameFolder(projectName, folder, newName) 
         Ok(newName) 
       }
     )

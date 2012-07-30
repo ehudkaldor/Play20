@@ -13,17 +13,22 @@ import org.neo4j.graphdb.index.Index
 case class Role (name: String)
 
 object Role extends Neo4jWrapper with MyRestGraphDatabaseServiceProvider with RestTypedTraverser with TypedTraverser{
-    // -- Queries
 
   lazy val index: Index[Node] = getNodeIndex("role").getOrElse{addNodeIndex("role").get}
 
   
-  /**
-   * Retrieve a Role from name.
-   */
+  // -- Queries
+
   def findByName(name: String): Option[Role] = {
         Some[Role](findAll.filter(_.name == name)(0))
   }
+  
+  def findByNodeId(id: Long): Option[Role] = withTx {
+    implicit neo => {
+      Neo4jWrapper.toCC[Role](getNodeById(id))
+    }
+  }
+
   
   /**
    * Retrieve all roles.

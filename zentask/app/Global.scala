@@ -26,7 +26,7 @@ object InitialData {
     Role.create(Role("monitor"))
     
     if(User.findAll.isEmpty) {
-      User.create(User("admin@white-bears.org", "secret", "admin", "admin", isActivated=true, "superuser"))     
+      User.create(User("admin@white-bears.org", "secret", "admin", "admin", "superuser", isActivated=true))     
     }
     
   }

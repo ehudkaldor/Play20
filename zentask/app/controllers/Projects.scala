@@ -8,6 +8,7 @@ import play.api._
 import views._
 import models.projects.{Project, Task}
 import models.users.User
+import views.html.defaultpages.notFound
 
 /**
  * Manage projects related operations.
@@ -22,7 +23,7 @@ object Projects extends Controller with Secured {
       Ok(
         html.dashboard(
           Project.findInvolving(email), 
-          Task.findTodoInvolving(email), 
+          Task.findInvolving(email), 
           user
         )
       )
@@ -41,7 +42,7 @@ object Projects extends Controller with Secured {
         views.html.projects.item(
           User.findByEmail(username) map { user =>
             Project.create(
-              Project(NotAssigned, folder, "New project", user.email), 
+              Project(folder, "New project", user.email), 
               Seq(user)
             )
           }
@@ -53,20 +54,25 @@ object Projects extends Controller with Secured {
   /**
    * Delete a project.
    */
-  def delete(project: Project) = IsMemberOf(project.id) { username => _ =>
-    Project.delete(project)
+  def delete(projectName: String) = IsProjectOwner(projectName) { username => _ =>
+    Project.findByName(projectName).map { p =>
+      Project.delete(p)      
+    }
     Ok
   }
 
   /**
    * Rename a project.
    */
-  def rename(project: Long) = IsMemberOf(project) { _ => implicit request =>
+  def rename(projectName: String) = IsProjectOwner(projectName) { _ => implicit request =>
     Form("name" -> nonEmptyText).bindFromRequest.fold(
       errors => BadRequest,
       newName => { 
-        Project.rename(project, newName) 
-        Ok(newName) 
+        Project.findByName(projectName).map { p =>
+          Project.rename(p, newName) 
+          Ok(newName) 
+        }
+        BadRequest(projectName)
       }
     )
   }
@@ -80,43 +86,35 @@ object Projects extends Controller with Secured {
     Ok(html.projects.group("New group"))
   }
 
-  /**
-   * Delete a project group.
-   */
-  def deleteGroup(folder: String) = IsAuthenticated { _ => _ =>
-    Project.deleteInFolder(folder)
-    Ok
-  }
-
-  /**
-   * Rename a project group.
-   */
-  def renameGroup(folder: String) = IsAuthenticated { _ => implicit request =>
-    Form("name" -> nonEmptyText).bindFromRequest.fold(
-      errors => BadRequest,
-      newName => { Project.renameFolder(folder, newName); Ok(newName) }
-    )
-  }
-
   // -- Members
 
   /**
    * Add a project member.
    */
-  def addUser(project: Long) = IsMemberOf(project) { _ => implicit request =>
+  def addUser(projectName: String) = IsProjectOwner(projectName) { _ => implicit request =>
     Form("user" -> nonEmptyText).bindFromRequest.fold(
       errors => BadRequest,
-      user => { Project.addMember(project, user); Ok }
+      user => { 
+        Project.findByName(projectName).map { p =>
+          Project.addMember(p, user) 
+          }          
+          Ok(user) 
+      }
     )
   }
 
   /**
    * Remove a project member.
    */
-  def removeUser(project: Long) = IsMemberOf(project) { _ => implicit request =>
+  def removeUser(projectName: String) = IsProjectOwner(projectName) { _ => implicit request =>
     Form("user" -> nonEmptyText).bindFromRequest.fold(
       errors => BadRequest,
-      user => { Project.removeMember(project, user); Ok }
+      user => { 
+        Project.findByName(projectName).map { p =>
+          Project.removeMember(p, user)
+        }          
+        Ok(user) 
+      }
     )
   }
 }

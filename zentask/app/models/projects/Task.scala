@@ -16,7 +16,7 @@ import play.api.Play.current
 import scala.collection.JavaConversions.iterableAsScalaIterable
 import play.api.Logger
 
-case class Task(name: String, folder: String, project: String, done: Boolean, description: Option[String] = None, dueDate: Option[DateTime] = None, owner: Option[String] = None){
+case class Task(id: Long, name: String, folder: String, projectId: Long, done: Boolean, description: Option[String] = None, dueDate: Option[DateTime] = None, ownerId: Option[Long] = None){
   val creationTime: DateTime = DateTime.now()
 }
 
@@ -44,12 +44,46 @@ object Task extends Neo4jWrapper with MyRestGraphDatabaseServiceProvider with Re
     }
   }
   
+  def findByNodeId(id: Long): Option[Task] = withTx {
+    implicit neo => {
+      Neo4jWrapper.toCC[Task](getNodeById(id))
+    }
+  }
+
+  
+  /**
+   * Retrieve all tasks for a project.
+   */
+  def findByProject(projectId: Long): Seq[Task] = {
+    withTx {
+      implicit neo => {
+        getReferenceNode.doTraverse[Task](follow ->- "TASK") {
+          END_OF_GRAPH
+        } {
+          case (x: Task, _) => x.projectId.equals(projectId) 
+          case _ => false
+        }.toList
+      }
+    }
+  }
+  
+  def isOwner(taskId: Long, userId: Long): Boolean = withTx {
+    implicit neo => {
+      User.findByNodeId(userId).map { user =>
+        findByNodeId(taskId) map { task =>
+          task.ownerId == user.id
+        }
+      }
+    }
+    false
+  }
+  
   /**
    * Retrieve tasks for the user.
    */
-  def findInvolving(email: String): Option[Seq[Task]] = withTx {
+  def findInvolving(userEmail: String): Option[Seq[Task]] = withTx {
     implicit neo => {
-      User.findByEmail(email).map { user =>
+      User.findByEmail(userEmail).map { user =>
         val userIndex = getNodeIndex("user").getOrElse{addNodeIndex("user").get}
         (for (node <- relationshipIndex.get("owner of", user); t = node.getStartNode().toCC[Task].get) yield t) toSeq
       } orElse {
@@ -99,28 +133,26 @@ object Task extends Neo4jWrapper with MyRestGraphDatabaseServiceProvider with Re
   /**
    * Find tasks related to a project
    */
-  def findByNameAndProjectAndFolder(taskName: String, folderName: String, projectName: String): Option[Task] = withTx {    
+  def findByNameAndProjectAndFolder(taskName: String, folderName: String, projectId: Long): Option[Task] = withTx {    
     implicit neo => {
-      nodeIndex.get("name+folder+project", taskName + "+" + folderName + "+" + projectName).getSingle().toCC[Task]
+      nodeIndex.get("name+folder+project", taskName + "+" + folderName + "+" + projectId).getSingle().toCC[Task]
     }
-  }
-
-  /**
-   * Find tasks related to a project
-   */
-  def findByNodeId(id: Long): Option[Task] = withTx {
-    implicit neo => 
-    	nodeIndex.get("nodeId", id).getSingle().toCC[Task]
   }
 
   /**
    * Delete a task
    */
-  def delete(task: Task) = withTx {
+  def delete(taskId: Long) = withTx {
     implicit neo => {
-      val taskId = task.getId 
-      task.delete()
-      Logger.debug("deleted task id: " + taskId)
+      findByNodeId(taskId) map { task: Task =>
+        nodeIndex.remove(task)
+        Logger.debug("removed task id: " + taskId + " from node index")
+        /***
+         * TODO: remove all relationships (dependencies, owner) and indices
+         ***/
+        task.delete()
+        Logger.debug("deleted task id: " + taskId)        
+      }
     } 
   }
   
@@ -143,73 +175,79 @@ object Task extends Neo4jWrapper with MyRestGraphDatabaseServiceProvider with Re
     } 
   }
   
-  def setOwner (task: Task, email:String) = withTx{
+  def setOwner (task: Task, ownerId: Long) = withTx{
+    Logger.debug("setOwner")
     implicit neo => {
-      User.findByEmail(email) map { user =>
-        Logger.debug("Setting task owner to " + user.email)
-        task.setProperty("owner", email)
-        val userIndex = getNodeIndex("user").getOrElse{addNodeIndex("user").get}
-        val userRel: Relationship = relationshipIndex.get("owner of", task).getSingle()      
-        Logger.debug("owner relationship acquired, id: " + userRel.getId())
-        relationshipIndex.get("owned by", userRel.getStartNode()).find(_.getStartNode() == task).map { rel =>
-          Logger.debug("owned relationship acquired, id: " + rel.getId())
-          relationshipIndex.remove(rel)
-          Logger.debug("owned relationship removed from index")
-          rel.delete 
-          Logger.debug("owned relationship deleted")
-        } orElse {
-          Logger.debug("owner relationship not found")
-          Some(None)
+      val userIndex = getNodeIndex("user").getOrElse{addNodeIndex("user").get}
+      if (relationshipIndex.get("task->owner", task).size() == 0){
+          Logger.debug("task->owner relationship not found")  
+      } else {
+        for (taskRel <- relationshipIndex.get("task->owner", task)){
+          Logger.debug("task->owner relationship acquired, id: " + taskRel.getId())
+          relationshipIndex.get("owner->task", taskRel.getStartNode()).find(_.getStartNode() == task).map { ownerRel =>
+            Logger.debug("owner->task relationship acquired, id: " + ownerRel.getId())
+            relationshipIndex.remove(ownerRel)
+            Logger.debug("owner->task relationship removed from index")
+            ownerRel.delete 
+            Logger.debug("owner->task relationship deleted")
+          } 
+          relationshipIndex.remove(taskRel)
+          Logger.debug("task->owner relationship removed from index")
+          taskRel.delete
+          Logger.debug("task->owner relationship deleted")  
         }
-        relationshipIndex.remove(userRel)
-        Logger.debug("owner relationship removed from index")
-        userRel.delete
-        Logger.debug("owner relationship deleted")
-        
-        val newTaskRel: Relationship = task.createRelationshipTo(user, "owned by")
-        Logger.debug("new owned-by relatioship created for task id: " + task.getId() + " and user " + user.email + ", relationship id: " + newTaskRel.getId())
-        relationshipIndex.add(newTaskRel, "owned by", task) 
-        Logger.debug("new owned-by relatioship added to index")
-
-        val newUserRel: Relationship = user.createRelationshipTo(task, "owner of")
-        Logger.debug("new owner-of relatioship created for user " + user.email + " and task id: " + task.getId() + " , relationship id: " + newTaskRel.getId())
-        relationshipIndex.add(newUserRel, "owner of", user) 
-        Logger.debug("new owner-of relatioship added to index")
       }
-      
+      User.findByNodeId(ownerId) map { user =>
+        Logger.debug("Setting task ownerId to " + ownerId)
+        task.setProperty("ownerId", ownerId)
+        
+        val newTaskRel: Relationship = task.createRelationshipTo(user, "task->owner")
+        Logger.debug("new task->owner relatioship created for task id: " + task.getId() + " and user id " + ownerId + ", relationship id: " + newTaskRel.getId())
+        relationshipIndex.add(newTaskRel, "task->owner", task) 
+        Logger.debug("new task->owner relatioship added to index")
+
+        val newUserRel: Relationship = user.createRelationshipTo(task, "owner->task")
+        Logger.debug("new owner->task relatioship created for user id " + ownerId + " and task id: " + task.getId() + " , relationship id: " + newTaskRel.getId())
+        relationshipIndex.add(newUserRel, "owner->task", user) 
+        Logger.debug("new owner->task relatioship added to index")
+      } getOrElse {
+      }      
     }
   }
   
   /**
    * Create a Task.
    */
-  def create(task: Task): Option[Task] = {
-    findByNameAndProjectAndFolder(task.name, task.folder, task.project) match {
+  def create(name: String, folder: String, projectId: Long, done: Boolean, description: Option[String] = None, dueDate: Option[DateTime] = None, ownerId: Option[Long] = None): Option[Task] = {
+    findByNameAndProjectAndFolder(name, folder, projectId) match {
       case _ => {
-        Logger.debug("task not found")
+        Logger.debug("task found in DB")
         None 
       }
     }
     withTx {
-    implicit neo => 
-      val node = createNode(task)
-      Logger.debug("database node create for task id " + node.getId)
-      User.findByEmail(task.owner.get).map { user =>
-        val userIndex = getNodeIndex("user").getOrElse{addNodeIndex("user").get}
-        val nodeRel: Relationship = node.createRelationshipTo(user, "owned by")
-        Logger.debug("new owned-by relatioship created for task id: " + node.getId() + " and user " + user.email + ", relationship id: " + nodeRel.getId())
-        relationshipIndex.add(nodeRel, "owned by", node) 
-        Logger.debug("new owned-by relatioship added to index")
-        val userRel: Relationship = user.createRelationshipTo(node, "owner of")
-        Logger.debug("new owner-of relatioship created for user " + user.email + " and task id: " + task.getId() + " , relationship id: " + userRel.getId())
-        relationshipIndex.add(userRel, "owner of", user)
-        Logger.debug("new owner-of relatioship added to index")
-      }
-	  nodeIndex.add(node, "name+folder+project", task.name + "+" + task.folder + "+" + task.project)
-      Logger.debug("new taks node added to name+folder+project index")
-	  nodeIndex.add(node, "nodeId", node.getId())
-      Logger.debug("new taks node added to nodeId index")
-      Neo4jWrapper.toCC[Task] (node)
+      implicit neo => {
+	    val node = createNode("name", name)
+	    node.setProperty("id", node.getId)
+	    node.setProperty("folder", folder)
+	    node.setProperty("projectId", projectId)
+	    node.setProperty("done", done)
+	    description.map { desc =>
+	      node.setProperty("description", desc)	      
+	    }
+	    dueDate.map {dueD =>
+	      node.setProperty("dueDate", dueD)
+	    }
+	    Logger.debug("database node create for task id " + node.getId)
+	    
+	    val task: Task = Task(node.getId, name, folder, projectId, done, description, dueDate, ownerId)
+	    setOwner(task, ownerId)
+		nodeIndex.add(node, "name+folder+project", task.name + "+" + task.folder + "+" + task.projectId)
+	    Logger.debug("new task node added to name+folder+project index")
+		nodeIndex.add(node, "nodeId", node.getId())
+	    Logger.debug("new task node added to nodeId index")
+	    Neo4jWrapper.toCC[Task] (node)
+	  }
     }      
   }
 }
