@@ -15,6 +15,8 @@ case class Role (name: String)
 object Role extends Neo4jWrapper with MyRestGraphDatabaseServiceProvider with RestTypedTraverser with TypedTraverser{
 
   lazy val index: Index[Node] = getNodeIndex("role").getOrElse{addNodeIndex("role").get}
+  
+  lazy val MinimalRole = create("minimal")
 
   
   // -- Queries
@@ -49,16 +51,16 @@ object Role extends Neo4jWrapper with MyRestGraphDatabaseServiceProvider with Re
     /**
    * Create a Role.
    */
-  def create(role: Role): Option[Role] = {
+  def create(roleName: String): Option[Role] = {
     withTx {
       implicit neo => {
-	    findByName(role.name) match {
+	    findByName(roleName) match {
 	      case _ => None
 	    }
 	    var node: Node = createNode(
-	        Role(role.name)
+	        Role(roleName)
 	    )
-	    index.add(node, "name", role.name)
+	    index.add(node, "name", roleName)
 	    Neo4jWrapper.toCC[Role](node)
       }
     }

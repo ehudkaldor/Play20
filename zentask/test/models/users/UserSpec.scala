@@ -8,7 +8,12 @@ import play.api.test.Helpers._
 class UserSpec extends Specification {
   "models.User" should {
     "User created" in {
-      User.create(User("ehud@gmail.com", "eee", "eee", "eee", "fff", false)).get.email.equals("ehud@gmail.com")
+      val user = User.create("ehud@gmail.com", "eee", "eee", "eee", Role.MinimalRole.get, false)
+      user match {
+        case Left(newUserOption) => newUserOption match {
+            case newUser => newUser.get.email.equals("ehud@gmail.com")
+        }    
+      }
     }
   }
 }

@@ -15,6 +15,8 @@ import models.utils.MyRestGraphDatabaseServiceProvider
 import play.api.Play.current
 import scala.collection.JavaConversions.iterableAsScalaIterable
 import play.api.Logger
+import org.neo4j.scala.DatabaseService
+import org.neo4j.scala.DatabaseServiceImpl
 
 case class Task(id: Long, name: String, folder: String, projectId: Long, done: Boolean, description: Option[String] = None, dueDate: Option[DateTime] = None, ownerId: Option[Long] = None){
   val creationTime: DateTime = DateTime.now()
@@ -155,15 +157,37 @@ object Task extends Neo4jWrapper with MyRestGraphDatabaseServiceProvider with Re
       }
     } 
   }
+    
+  /**
+   * Delete all task in a folder.
+   */
+  def deleteAllInFolder(projectId: Long, folder: String) = withTx {
+    implicit neo => {
+      for (task <- findAll if task.projectId == projectId && task.folder.equals(folder))
+        delete(task.id)
+    } 
+  }
   
-//  /**
-//   * Delete all task in a folder.
-//   */
-//  def deleteAllInFolder(projectName: String, folder: String) = withTx {
-//    implicit neo => {
-//      
-//    } 
-//  }
+  def renameFolder(projectId: Long, folder: String, newFolderName: String): Seq[Task] = withTx {
+    implicit neo => {
+      val taskIdSeq = for (task <- findAll if task.projectId == projectId && task.folder.equals(folder)) yield task.id
+      taskIdSeq.foreach { taskId =>
+        moveFolder(taskId, newFolderName)
+      }
+      for (taskId <- taskIdSeq) yield findByNodeId(taskId) match {
+        case task: Task => task
+      }
+    } 
+  }
+  
+  def moveFolder(taskId: Long, newFolderName: String): Option[Task] = withTx {
+    implicit neo => {
+      findByNodeId(taskId).map { task =>
+        task.asInstanceOf[Node].setProperty("folder", newFolderName)
+        task
+      }
+    }
+  }
   
   /**
    * Mark a task as done or not
@@ -175,7 +199,7 @@ object Task extends Neo4jWrapper with MyRestGraphDatabaseServiceProvider with Re
     } 
   }
   
-  def setOwner (task: Task, ownerId: Long) = withTx{
+  def setOwner (task: Task, ownerId: Option[Long]) = withTx{
     Logger.debug("setOwner")
     implicit neo => {
       val userIndex = getNodeIndex("user").getOrElse{addNodeIndex("user").get}
@@ -197,55 +221,90 @@ object Task extends Neo4jWrapper with MyRestGraphDatabaseServiceProvider with Re
           Logger.debug("task->owner relationship deleted")  
         }
       }
-      User.findByNodeId(ownerId) map { user =>
-        Logger.debug("Setting task ownerId to " + ownerId)
-        task.setProperty("ownerId", ownerId)
+      ownerId map { newOwnerId =>
+        User.findByNodeId(newOwnerId) map { user =>
+          Logger.debug("Setting task ownerId to " + newOwnerId)
+          task.setProperty("ownerId", newOwnerId)
         
-        val newTaskRel: Relationship = task.createRelationshipTo(user, "task->owner")
-        Logger.debug("new task->owner relatioship created for task id: " + task.getId() + " and user id " + ownerId + ", relationship id: " + newTaskRel.getId())
-        relationshipIndex.add(newTaskRel, "task->owner", task) 
-        Logger.debug("new task->owner relatioship added to index")
+          val newTaskRel: Relationship = task.createRelationshipTo(user, "task->owner")
+          Logger.debug("new task->owner relatioship created for task id: " + task.id + " and user id " + newOwnerId + ", relationship id: " + newTaskRel.getId())
+          relationshipIndex.add(newTaskRel, "task->owner", task) 
+          Logger.debug("new task->owner relatioship added to index")
 
-        val newUserRel: Relationship = user.createRelationshipTo(task, "owner->task")
-        Logger.debug("new owner->task relatioship created for user id " + ownerId + " and task id: " + task.getId() + " , relationship id: " + newTaskRel.getId())
-        relationshipIndex.add(newUserRel, "owner->task", user) 
-        Logger.debug("new owner->task relatioship added to index")
+          val newUserRel: Relationship = user.createRelationshipTo(task, "owner->task")
+          Logger.debug("new owner->task relatioship created for user id " + newOwnerId + " and task id: " + task.id + " , relationship id: " + newTaskRel.getId())
+          relationshipIndex.add(newUserRel, "owner->task", user) 
+          Logger.debug("new owner->task relatioship added to index")
+        } getOrElse {
+          Logger.debug("ownerId not found in user database -> task owner set to none")                
+        }        
       } getOrElse {
-      }      
+        Logger.debug("ownerId is empty -> task owner set to none")                
+      }
     }
   }
   
-  /**
-   * Create a Task.
-   */
-  def create(name: String, folder: String, projectId: Long, done: Boolean, description: Option[String] = None, dueDate: Option[DateTime] = None, ownerId: Option[Long] = None): Option[Task] = {
-    findByNameAndProjectAndFolder(name, folder, projectId) match {
-      case _ => {
-        Logger.debug("task found in DB")
-        None 
-      }
+  def update(taskId: Long, name: String, folder: String, done: Boolean, description: Option[String] = None, dueDate: Option[DateTime] = None, ownerId: Option[Long] = None): Option[Task] = {
+    findByNodeId(taskId) map { taskNode =>
+      Logger.debug("task found in DB. updating")
+      createOrUpdate(Some(taskNode), name, folder, None, done, description, dueDate, ownerId)
+    } getOrElse {
+      Logger.debug("task was not found in DB. aborting")
+      None
     }
+  }
+
+  def create(name: String, folder: String, projectId: Long, done: Boolean, description: Option[String] = None, dueDate: Option[DateTime] = None, ownerId: Option[Long] = None): Option[Task] = {
+    createOrUpdate(None, name, folder, Some(projectId), done, description, dueDate, ownerId)
+  }
+
+  /**
+   * Create a Task or update and existing one.
+   */
+  private def createOrUpdate(myTask: Option[Task], name: String, folder: String, projectId: Option[Long], done: Boolean, description: Option[String] = None, dueDate: Option[DateTime] = None, ownerId: Option[Long] = None): Option[Task] = {
     withTx {
       implicit neo => {
-	    val node = createNode("name", name)
-	    node.setProperty("id", node.getId)
+        val node: Node = myTask map { task =>
+          Logger.debug("task with id " + task.id +" passed as parameter. updating")
+          task.asInstanceOf[Node]
+        } getOrElse{
+          projectId map { myProjId =>
+            Logger.debug("task not passed as parameter. creating")          
+            val myNode = createNode("name", name)
+            Logger.debug("database node created with id " + myNode.getId)          
+	        myNode.setProperty("id", node.getId)
+	        Logger.debug("node property set: id=" + node.getId)
+    	    node.setProperty("projectId", myProjId)
+	        Logger.debug("node property set: projectId=" + myProjId)
+	        myNode            
+          } getOrElse {
+	        Logger.debug("no task or project id passed as parameters. returning None")
+            return None
+          }
+        }
 	    node.setProperty("folder", folder)
-	    node.setProperty("projectId", projectId)
+	    Logger.debug("node property set: folder=" + folder)
 	    node.setProperty("done", done)
-	    description.map { desc =>
+	    Logger.debug("node property set: done=" + done)
+	    description map { desc =>
 	      node.setProperty("description", desc)	      
+	      Logger.debug("node property set: description=" + desc)
 	    }
-	    dueDate.map {dueD =>
+	    dueDate map { dueD =>
 	      node.setProperty("dueDate", dueD)
+	      Logger.debug("node property set: dueDate=" + dueD)
 	    }
-	    Logger.debug("database node create for task id " + node.getId)
-	    
-	    val task: Task = Task(node.getId, name, folder, projectId, done, description, dueDate, ownerId)
+	    //creating the task if none existent or getting existing task.
+	    //no need to check on projectId, because if both task and projectId were None, would have returned None above 
+	    val task: Task = myTask.getOrElse{
+	      val myTask = Task(node.getId, name, folder, projectId.get, done, description, dueDate, ownerId)
+  		  nodeIndex.add(node, "name+folder+project", task.name + "+" + task.folder + "+" + task.projectId)
+	      Logger.debug("new task node added to name+folder+project index")
+		  nodeIndex.add(node, "nodeId", node.getId())
+	      Logger.debug("new task node added to nodeId index")
+	      myTask
+        }
 	    setOwner(task, ownerId)
-		nodeIndex.add(node, "name+folder+project", task.name + "+" + task.folder + "+" + task.projectId)
-	    Logger.debug("new task node added to name+folder+project index")
-		nodeIndex.add(node, "nodeId", node.getId())
-	    Logger.debug("new task node added to nodeId index")
 	    Neo4jWrapper.toCC[Task] (node)
 	  }
     }      

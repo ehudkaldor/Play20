@@ -72,32 +72,33 @@ object User extends Neo4jWrapper with MyRestGraphDatabaseServiceProvider with Re
   /**
    * Create a User.
    */
-  def create(email: String, clearPassword: String, firstName: String, lastName: String, role: Role, isActivated: Boolean): Option[User] = {
+  def create(email: String, clearPassword: String, firstName: String = "", lastName: String = "", role: Role = Role.MinimalRole.get, isActivated: Boolean = false): Either[Option[User], String] = {
     withTx {
       implicit neo => {
 	    exists(email) match {
 	      case true => {
             Logger.debug("user email " + email + " already exists")
-            None
+            Right("user email " + email + " already exists")
+	      }
+	      case false => {
+  	        val node: Node = createNode("email", email)
+	        node.setProperty("id", node.getId)
+	        node.setProperty("password", passwordHash(clearPassword))
+	        node.setProperty("firstName", firstName)
+    	    node.setProperty("lastName", lastName)
+	        node.setProperty("roleName", role.name)
+	        node.setProperty("isActived", isActivated)
+	    
+    	    User(node.getId, email, passwordHash(clearPassword), firstName, lastName, role, isActivated)
+            Logger.debug("new node for user email: " + email + " created")
+	        nodeIndex.add(node, "nodeId", node.getId())
+    	    Logger.debug("new user node added to nodeId index")
+	        nodeIndex.add(node, "email", email)
+            Logger.debug("new user node added to email index")
+        
+            Left(findByNodeId(node.getId))
 	      }
 	    }	
-	    val node: Node = createNode("email", email)
-	    node.setProperty("id", node.getId)
-	    node.setProperty("password", passwordHash(clearPassword))
-	    node.setProperty("firstName", firstName)
-	    node.setProperty("lastName", lastName)
-	    node.setProperty("roleName", role.name)
-	    node.setProperty("isActived", isActivated)
-	    
-	    User(node.getId, email, passwordHash(clearPassword), firstName, lastName, role, isActivated)
-	    nodeIndex.add(node, "email", email)
-        Logger.debug("new node for user email: " + email + " created")
-	    nodeIndex.add(node, "nodeId", node.getId())
-	    Logger.debug("new user node added to nodeId index")
-	    Neo4jWrapper.toCC[User](node)
-        Logger.debug("new user node added to email index")
-        
-        findByNodeId(node.getId)
       }
     }
   }

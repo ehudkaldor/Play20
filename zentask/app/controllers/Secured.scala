@@ -26,24 +26,24 @@ trait Secured {
   /** 
    * Action for authenticated users.
    */
-  def IsAuthenticated(f: => String => Request[AnyContent] => Result) = Security.Authenticated(username, onUnauthorized) { user =>
-    Action(request => f(user)(request))
+  def IsAuthenticated(f: => String => Request[AnyContent] => Result) = Security.Authenticated(username, onUnauthorized) { userIdAsString =>
+    Action(request => f(userIdAsString)(request))
   }
 
   /**
    * Check if the connected user is a member of this project.
    */
-  def IsProjectOwner(project: Project)(f: => String => Request[AnyContent] => Result) = IsAuthenticated { user => request =>
-    if(Project.isOwner(project, user)) {
-      f(user)(request)
+  def IsProjectOwner(projectId: Long)(f: => String => Request[AnyContent] => Result) = IsAuthenticated { userIdAsString => request =>
+    if(Project.isOwner(projectId, userIdAsString.toLong)) {
+      f(userIdAsString)(request)
     } else {
       Results.Forbidden
     }
   }
 
-  def IsProjectMember(project: Project)(f: => String => Request[AnyContent] => Result) = IsAuthenticated { user => request =>
-    if(Project.isMember(projectName, user)) {
-      f(user)(request)
+  def IsProjectMember(projectId: Long)(f: => String => Request[AnyContent] => Result) = IsAuthenticated { userIdAsString => request =>
+    if(Project.isMember(projectId, userIdAsString.toLong)) {
+      f(userIdAsString)(request)
     } else {
       Results.Forbidden
     }
@@ -52,9 +52,9 @@ trait Secured {
   /**
    * Check if the connected user is a owner of this task.
    */
-  def IsTaskOwner(taskId: Long)(f: => String => Request[AnyContent] => Result) = IsAuthenticated { user => request =>
-    if(Task.isOwner(taskId, user)) {
-      f(user)(request)
+  def IsTaskOwner(taskId: Long)(f: => String => Request[AnyContent] => Result) = IsAuthenticated { userIdAsString => request =>
+    if(Task.isOwner(taskId, userIdAsString.toLong)) {
+      f(userIdAsString)(request)
     } else {
       Results.Forbidden
     }

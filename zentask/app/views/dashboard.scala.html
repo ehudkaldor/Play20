@@ -1,4 +1,6 @@
-@(projects: Seq[Project], todoTasks: Seq[(Task,Project)], user: users.User)
+@(projects: Option[Seq[Project]], todoTasks: Option[Seq[Task]], user: User)
+@import models.users._
+@import models.projects._
 
 @main(projects, user){
     

@@ -19,14 +19,14 @@ object ModelsImplicits extends MyRestGraphDatabaseServiceProvider with Neo4jWrap
   implicit def task2node(task: Task): Node = {
     withTx {
       implicit neo =>
-      	getNodeIndex("TASK").get.query("folder+project", task.folder + "+" + task.project).getSingle
+      	getNodeIndex("TASK").get.query("folder+project", task.folder + "+" + task.projectId).getSingle
     }      
   }
 
   implicit def project2node(project: Project): Node = {
     withTx {
       implicit neo =>
-      	getNodeIndex("PROJECT").get.query("folder+name", project.folder + "+" + project.name).getSingle
+      	getNodeIndex("PROJECT").get.query("name", project.name).getSingle
     }      
   }
 

@@ -22,11 +22,13 @@ object InitialData {
   
   def insert() = {
     
-    Role.create(Role("superuser"))
-    Role.create(Role("monitor"))
+    val superUserRole = Role.create("superuser")
+    Role.create("monitor")
     
     if(User.findAll.isEmpty) {
-      User.create(User("admin@white-bears.org", "secret", "admin", "admin", "superuser", isActivated=true))     
+      superUserRole map { suRole =>
+        User.create("admin@white-bears.org", "secret", "admin", "admin", suRole, true) 
+      }
     }
     
   }

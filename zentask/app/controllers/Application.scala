@@ -8,12 +8,20 @@ import models._
 import views._
 import models.users.User
 import models.projects._
+import play.api.data.format.Formats._
+import org.joda.time.DateTime
 
-object Application extends Controller {
 
-  // -- Authentication
+object Application extends Controller with Secured {
 
-  val loginForm = Form(
+  /********
+   * 
+   * Forms
+   * 
+   ********/
+  
+  
+  val memberLoginForm = Form(
     tuple(
       "email" -> text,
       "password" -> text
@@ -22,9 +30,7 @@ object Application extends Controller {
     })
   )
 
-    // - Registration Form
-
-  val registerForm = Form(
+  val memberRegisterForm = Form(
     tuple(
       "email" -> nonEmptyText,
       "verifyEmail" -> nonEmptyText,
@@ -41,19 +47,40 @@ object Application extends Controller {
       }
     })
   )
+  
+  val projectForm = Form(
+    tuple(
+      "projectId" -> optional(of[Long]),
+      "name" -> nonEmptyText,
+      "description" -> optional(text),
+      "ownerId" -> of[Long]
+    )
+  )
+
+  val taskForm = Form(
+    tuple(
+      "taskId" -> optional(of[Long]),
+      "name" -> nonEmptyText,
+      "folder" -> nonEmptyText,
+      "description" -> optional(text),
+      "dueDate" -> optional(date("MM/dd/yy")),
+      "assignedToUserId" -> optional(of[Long]),
+      "projectId" -> of[Long]
+    )
+  )
 
   /**
    * Login page.
    */
   def login = Action { implicit request =>
-    Ok(html.users.login(loginForm))
+    Ok(html.users.login(memberLoginForm))
   }
 
   /**
    * Handle login form submission.
    */
   def authenticate = Action { implicit request =>
-    loginForm.bindFromRequest.fold(
+    memberLoginForm.bindFromRequest.fold(
       formWithErrors => BadRequest(html.users.login(formWithErrors)),
       user => Redirect(routes.Projects.index).withSession("email" -> user._1)
     )
@@ -63,21 +90,26 @@ object Application extends Controller {
    * Register page.
    */
   def register = Action { implicit request =>
-    Ok(html.users.register(registerForm))
+    Ok(html.users.register(memberRegisterForm))
   }
   
     /**
    * Handle register form submission
    */
   def createUser = Action { implicit request =>
-    registerForm.bindFromRequest.fold(
+    memberRegisterForm.bindFromRequest.fold(
       formWithErrors => BadRequest(html.users.register(formWithErrors)),
       user => {
-//        val email = user._1
-//        val password = user._3
-//        User.create(User(email, password))
-        User.create(User(user._1, user._3))
-        Redirect(routes.Projects.index).withSession("email" -> user._1) 
+        User.create(user._1, user._3) match{
+          case Left(newUserOption) => newUserOption match {
+            //option contains the newly created User
+            case newUser => Ok(html.dashboard() ).withSession("userId" -> newUser.id)
+            //Option is empty (meaning DB creation failed)
+            case None => Ok(html.users.register(memberRegisterForm)).flashing("error" -> "")
+          }
+          //error message returned (no Option[User])
+          case Right(message) => Ok(html.users.register(memberRegisterForm)).flashing("error" -> message)
+        }
       }
     )
   }
@@ -106,9 +138,199 @@ object Application extends Controller {
     ).as("text/javascript") 
   }
 
+  
+  /****
+   * 
+   * 	Projects
+   * 
+   ****/
+  
+    /**
+   * Display the projects dashboard.
+   */
+  def projectsDashboard = IsAuthenticated { email => _ =>
+    User.findByEmail(email).map { user =>
+    html.dashboard(
+      Ok(
+          Project.findInvolving(email), 
+          Task.findInvolving(email), 
+          user
+        )
+      )
+    }.getOrElse(Forbidden)
+  }
+
+  // -- Projects
+
+  /**
+   * Add a project.
+   */
+  def addProject = IsAuthenticated { _ => implicit request =>
+    projectForm.bindFromRequest.fold(
+      errors => BadRequest,
+      {
+        case (projectId, name, description, ownerId) => {
+          val project = projectId map { 
+            Project.update(_, name, ownerId, description)
+          } getOrElse {
+            Project.create(name, ownerId, description)
+          }
+          Ok(html.projects.item(project))
+        }
+      }
+    )
+  }
+
+  /**
+   * Delete a project.
+   */
+  def deleteProject(projectId: Long) = IsProjectOwner(projectId) { username => _ =>
+    Project.delete(projectId)      
+    Ok
+  }
+
+  /**
+   * Rename a project.
+   */
+  def renameProject(projectId: Long) = IsProjectOwner(projectId) { _ => implicit request =>
+    Form("name" -> nonEmptyText).bindFromRequest.fold(
+      errors => BadRequest,
+      newName => { 
+        Project.rename(projectId, newName)
+        Ok(newName) 
+      }
+    )
+  }
+
+  // -- Project groups
+
+  /**
+   * Add a new project group.
+   */
+  def addGroup = IsAuthenticated { _ => _ =>
+    Ok(html.projects.group("New group"))
+  }
+
+  // -- Members
+
+  /**
+   * Add a project member.
+   */
+  def addMemberToProject(projectId: Long) = IsProjectOwner(projectId) { _ => implicit request =>
+    Form("userId" -> of[Long]).bindFromRequest.fold(
+      errors => BadRequest,
+      userId => {  
+        Project.addMember(projectId, userId)           
+        Redirect(html.projects.group(Project.findByNodeId(projectId))) 
+      }
+    )
+  }
+
+  /**
+   * Remove a project member.
+   */
+  def removeMemberFromProject(projectId: Long) = IsProjectOwner(projectId) { _ => implicit request =>
+    Form("user" -> nonEmptyText).bindFromRequest.fold(
+      errors => BadRequest,
+      user => { 
+        Project.findByNodeId(projectId).map { p =>
+          Project.removeMember(p, user)
+        }          
+        Redirect(html.projects.group(Project.findByNodeId(projectId))) 
+      }
+    )
+  }
+
+  
+  /****
+   * 
+   * 	Tasks
+   * 
+   ****/
+
+    /**
+   * Display the tasks panel for a project.
+   */
+  def tasksDashboard(projectId: Long) = IsProjectOwner(projectId) { _ => implicit request =>
+    Project.findByNodeId(projectId).map { p =>
+      val tasks = Task.findByProject(p.id)
+      val team = Project.membersOf(p.id)
+      Ok(html.tasks.index(p, tasks, team))
+    }.getOrElse(NotFound)
+  }
+
+    /**
+   * Create a task or update an existing task in this project.
+   */  
+  def addOrUpdateTask(projectIdAsString: String) =  IsProjectOwner(projectIdAsString.toLong) { _ => implicit request =>
+    taskForm.bindFromRequest.fold(
+      errors => BadRequest,
+      {
+        case (taskId, name, folder, description, dueDate, assignedToUserId, projectId) => {
+          val task = taskId map { 
+            Task.update(
+              _, name, folder, false, description, dueDate=Some(new DateTime(dueDate)), assignedToUserId
+            )            
+          } getOrElse {
+            Task.create(
+              name, folder, projectId, false, description, dueDate=Some(new DateTime(dueDate)), assignedToUserId
+            )                      
+          }
+        } 
+        Ok(html.tasks.item(task))
+      }
+    )
+  }
+
+  /**
+   * Update a task
+   */
+//  def updateTask(taskIdAsString: String) = IsProjectMember(Task.findByNodeId(taskIdAsString.toLong).get.projectId) { _ => implicit request =>
+//    taskForm.bindFromRequest.fold(
+//      errors => BadRequest,
+//      {
+//        case (taskId, name, folder, description, dueDate, assignedToUserId, projectId) => 
+//          val task =  Task.update(
+//            taskId, name, folder, false, description, dueDate=Some(new DateTime(dueDate)), assignedToUserId
+//          )
+//          Ok(html.tasks.item(task))
+//      }
+//    )
+//  }
+
+  /**
+   * Delete a task
+   */
+  def deleteTask(taskId: Long) = IsProjectOwner(Task.findByNodeId(taskId).get.projectId) { _ => implicit request =>
+    Task.findByNodeId(taskId) map { task => 
+      val project = Project.findByNodeId(task.projectId)
+      val taskName = task.name
+      Task.delete(taskId)      
+      Redirect(html.tasks.index(project)).flashing(("response", "Task " + taskName + " deleted"))
+    }
+    BadRequest("Task id " + taskId + " not found")
+  }
+
+  // -- Task folders
+
+  /**
+   * Delete a full tasks folder.
+   */
+  def deleteFolder(projectId: Long, folder: String) = IsProjectOwner(projectId) { _ => implicit request =>
+    Task.deleteAllInFolder(projectId, folder)
+    Redirect(html.tasks.index(Project.findByNodeId(projectId))).flashing(("response", "Folder " + folder + " deleted"))
+  }
+
+  /**
+   * Rename a tasks folder.
+   */
+  def renameFolder(projectId: Long, folder: String) = IsProjectOwner(projectId) { _ => implicit request =>
+    Form("name" -> nonEmptyText).bindFromRequest.fold(
+      errors => BadRequest,
+      newName => { 
+        Task.renameFolder(projectId, folder, newName) 
+        Redirect(html.tasks.index(Project.findByNodeId(projectId))).flashing(("response", "Folder " + folder + " was renamed " + newName))
+      }
+    )
+  }
 }
-
-/**
- * Provide security features
- */
-

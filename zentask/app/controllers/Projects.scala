@@ -1,6 +1,5 @@
 package controllers
 
-import anorm._
 import play.api.data.Forms._
 import play.api.data._
 import play.api.mvc._
@@ -9,16 +8,29 @@ import views._
 import models.projects.{Project, Task}
 import models.users.User
 import views.html.defaultpages.notFound
+import play.api.data.format.Formats._
+import views.html.defaultpages.badRequest
+
 
 /**
  * Manage projects related operations.
  */
 object Projects extends Controller with Secured {
+    
+  val projectForm = Form(
+    tuple(
+      "projectId" -> optional(of[Long]),
+      "name" -> nonEmptyText,
+      "description" -> optional(text),
+      "ownerId" -> of[Long]
+    )
+  )
+
 
   /**
-   * Display the dashboard.
+   * Display the projects dashboard.
    */
-  def index = IsAuthenticated { email => _ =>
+  def projectsDashboard = IsAuthenticated { email => _ =>
     User.findByEmail(email).map { user =>
       Ok(
         html.dashboard(
@@ -35,44 +47,39 @@ object Projects extends Controller with Secured {
   /**
    * Add a project.
    */
-  def add = IsAuthenticated { username => implicit request =>
-    Form("group" -> nonEmptyText).bindFromRequest.fold(
+  def addProject = IsAuthenticated { _ => implicit request =>
+    projectForm.bindFromRequest.fold(
       errors => BadRequest,
-      folder => Ok(
-        views.html.projects.item(
-          User.findByEmail(username) map { user =>
-            Project.create(
-              Project(folder, "New project", user.email), 
-              Seq(user)
-            )
+      {
+        case (projectId, name, description, ownerId) => {
+          val project = projectId map { 
+            Project.update(_, name, ownerId, description)
+          } getOrElse {
+            Project.create(name, ownerId, description)
           }
-        )          
-      )
+          Ok(html.projects.item(project))
+        }
+      }
     )
   }
 
   /**
    * Delete a project.
    */
-  def delete(projectName: String) = IsProjectOwner(projectName) { username => _ =>
-    Project.findByName(projectName).map { p =>
-      Project.delete(p)      
-    }
+  def deleteProject(projectId: Long) = IsProjectOwner(projectId) { username => _ =>
+    Project.delete(projectId)      
     Ok
   }
 
   /**
    * Rename a project.
    */
-  def rename(projectName: String) = IsProjectOwner(projectName) { _ => implicit request =>
+  def renameProject(projectId: Long) = IsProjectOwner(projectId) { _ => implicit request =>
     Form("name" -> nonEmptyText).bindFromRequest.fold(
       errors => BadRequest,
       newName => { 
-        Project.findByName(projectName).map { p =>
-          Project.rename(p, newName) 
-          Ok(newName) 
-        }
-        BadRequest(projectName)
+        Project.rename(projectId, newName)
+        Ok(newName) 
       }
     )
   }
@@ -91,14 +98,12 @@ object Projects extends Controller with Secured {
   /**
    * Add a project member.
    */
-  def addUser(projectName: String) = IsProjectOwner(projectName) { _ => implicit request =>
-    Form("user" -> nonEmptyText).bindFromRequest.fold(
+  def addMemberToProject(projectId: Long) = IsProjectOwner(projectId) { _ => implicit request =>
+    Form("user" -> of[Long]).bindFromRequest.fold(
       errors => BadRequest,
-      user => { 
-        Project.findByName(projectName).map { p =>
-          Project.addMember(p, user) 
-          }          
-          Ok(user) 
+      user => {  
+        Project.addMember(projectId, user) 
+        Redirect(html.projects.group(Project.findByNodeId(projectId))) 
       }
     )
   }
@@ -106,14 +111,14 @@ object Projects extends Controller with Secured {
   /**
    * Remove a project member.
    */
-  def removeUser(projectName: String) = IsProjectOwner(projectName) { _ => implicit request =>
+  def removeMemberFromProject(projectId: Long) = IsProjectOwner(projectId) { _ => implicit request =>
     Form("user" -> nonEmptyText).bindFromRequest.fold(
       errors => BadRequest,
       user => { 
-        Project.findByName(projectName).map { p =>
+        Project.findByNodeId(projectId) map { p =>
           Project.removeMember(p, user)
         }          
-        Ok(user) 
+        Redirect(html.projects.group(Project.findByNodeId(projectId))) 
       }
     )
   }
